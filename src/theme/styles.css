@@ -203,6 +203,45 @@
   color: var(--lv-color-text);
 }
 
+/* ── Boundary level select ───────────────────────────────────────────────── */
+
+.lv-boundary-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--lv-color-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238B92B4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  color: var(--lv-color-text);
+  cursor: pointer;
+  font-family: var(--lv-font);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 28px 4px 10px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  height: 28px;
+}
+
+.lv-boundary-select:hover {
+  border-color: var(--lv-color-primary);
+  color: var(--lv-color-text);
+}
+
+.lv-boundary-select:focus {
+  outline: none;
+  border-color: var(--lv-color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lv-color-primary) 20%, transparent);
+}
+
+.lv-boundary-select option {
+  background: var(--lv-color-surface);
+  color: var(--lv-color-text);
+}
+
 /* Separator between toggle and KPI pills */
 .lv-header-divider {
   width: 1px;

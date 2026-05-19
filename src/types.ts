@@ -1,4 +1,5 @@
 import type { StyleSpecification } from 'maplibre-gl'
+import type { OuterLevel, InnerLevel } from './geo/levels'
 
 // ─── Geo ──────────────────────────────────────────────────────────────────────
 
@@ -133,6 +134,10 @@ export type ViewMode = 'inner' | 'outer'
 export interface LocalVisionAppOptions {
   container: string | HTMLElement
   defaultView?: ViewMode
+  /** Starting boundary level for inner city view (default: 'tract') */
+  defaultInnerBoundary?: InnerLevel
+  /** Starting boundary level for outer city view (default: 'county') */
+  defaultOuterBoundary?: OuterLevel
   /** Options for InnerCityView (container is managed internally) */
   inner: Omit<InnerCityOptions, 'container'>
   /** Options for OuterCityView (container is managed internally) */
@@ -174,8 +179,14 @@ export interface KpiSelectEvent {
   kpiId: string
 }
 
+export interface BoundaryChangeEvent {
+  boundary: OuterLevel | InnerLevel
+  view: ViewMode
+}
+
 export type LocalVisionEventMap = {
   featureSelect: FeatureSelectEvent
   featureDeselect: never
   kpiSelect: KpiSelectEvent
+  boundaryChange: BoundaryChangeEvent
 }

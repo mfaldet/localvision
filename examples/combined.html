@@ -142,6 +142,10 @@
     app.on('featureSelect', (e) => {
       console.log('Selected:', e.featureId, e.properties)
     })
+
+    app.on('boundaryChange', (e) => {
+      console.log(`Boundary changed → ${e.boundary} (${e.view} view)`)
+    })
   </script>
 </body>
 </html>

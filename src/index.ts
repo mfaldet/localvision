@@ -23,6 +23,7 @@ export type {
   ThemeOverrides,
   FeatureSelectEvent,
   KpiSelectEvent,
+  BoundaryChangeEvent,
   LocalVisionEventMap,
 } from './types'
 
