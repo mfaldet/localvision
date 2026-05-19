@@ -142,6 +142,16 @@ export interface OuterCityOptions {
    * here to link this view with other components.
    */
   selection?: import('./state/selection').SelectionStore
+  /**
+   * When provided, the detail panel shows a "Drill into" button. Called
+   * with the selected community's id, label, and feature properties.
+   */
+  onDrillRequest?: (community: { id: string; label: string; properties: Record<string, unknown> }) => void
+  /**
+   * Optional label for the drill button, e.g. "Drill into tracts".
+   * Default: "Drill into [community label]".
+   */
+  drillButtonLabel?: string
 }
 
 // ─── Combined app ─────────────────────────────────────────────────────────────
@@ -172,6 +182,19 @@ export interface LocalVisionAppOptions {
   /** Options for OuterCityView (container is managed internally) */
   outer: Omit<OuterCityOptions, 'container' | 'headerEl'>
   theme?: ThemeOverrides
+  /**
+   * Drill-down configuration. When provided, the OuterCityView shows a
+   * "Drill into" button in the detail panel and a breadcrumb appears above
+   * the chart panel. The library calls drillProvider to fetch each new
+   * level's binding; users decide what "drilling" means by what they return.
+   */
+  drillProvider?: import('./state/drilldown').DrillProvider
+  /**
+   * Initial root entry for the drill-down stack. Sets the breadcrumb's root
+   * label. If omitted, a sensible default is derived from
+   * `defaultOuterBoundary` + `boundaryContext`.
+   */
+  rootDrilldownLevel?: import('./state/drilldown').DrilldownLevel
 }
 
 export interface KpiDefinition {

@@ -9,6 +9,14 @@ import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
 import { BoundaryLoader } from '../geo/loader'
 import { SelectionStore } from '../state/selection'
+import {
+  DrilldownStore,
+  parseGeoId,
+  type DrilldownLevel,
+  type DrilldownState,
+  type DrillTarget,
+} from '../state/drilldown'
+import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
 import { OuterCityView } from './OuterCityView'
@@ -43,6 +51,8 @@ export class LocalVisionApp {
   private options: LocalVisionAppOptions
   private geoLoader: BoundaryLoader
   private selection: SelectionStore
+  private drilldown: DrilldownStore
+  private breadcrumbEl: HTMLElement
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
@@ -54,6 +64,7 @@ export class LocalVisionApp {
     this.outerBoundary = options.defaultOuterBoundary ?? 'county'
     this.geoLoader = new BoundaryLoader({ sessionCache: true })
     this.selection = new SelectionStore()
+    this.drilldown = new DrilldownStore()
 
     const theme = resolveTheme(options.theme)
 
@@ -90,14 +101,24 @@ export class LocalVisionApp {
 
     this.root.appendChild(this.headerEl)
 
+    // ── Breadcrumb (drill-down navigation) ──────────────────────────────────
+    this.breadcrumbEl = document.createElement('div')
+    this.breadcrumbEl.className = 'lv-breadcrumb'
+    this.breadcrumbEl.style.display = 'none' // hidden until a drillProvider is configured
+    this.root.appendChild(this.breadcrumbEl)
+
     // ── Body ─────────────────────────────────────────────────────────────────
     this.bodyEl = document.createElement('div')
     this.bodyEl.className = 'lv-app-body'
     this.root.appendChild(this.bodyEl)
 
+    // Drill-down store wiring (renders breadcrumb on changes)
+    this.drilldown.subscribe((state) => this.renderBreadcrumb(state))
+
     // Render initial state
     this.syncHeaderForView(this.activeView)
     this.mountView(this.activeView)
+    this.initializeDrilldownRoot()
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -124,6 +145,59 @@ export class LocalVisionApp {
    */
   get selectionStore(): SelectionStore {
     return this.selection
+  }
+
+  /**
+   * Drill-down stack store. Subscribe to receive navigation updates, or call
+   * `.popTo(depth)` to navigate programmatically.
+   */
+  get drilldownStore(): DrilldownStore {
+    return this.drilldown
+  }
+
+  /**
+   * Drill into a feature. Resolves the next level via `options.drillProvider`
+   * and updates the active OuterCityView's binding. No-op if no provider is
+   * configured, no binding is loaded, or the provider returns null.
+   */
+  async drillInto(parentGeoid: string, parentLabel: string, parentProperties: Record<string, unknown>): Promise<void> {
+    if (!this.options.drillProvider) return
+    const current = this.drilldown.current()
+    if (!current) return
+
+    const nextLevel = nextDrillLevel(current.level.level)
+    if (!nextLevel) return
+
+    const parsed = parseGeoId(parentGeoid)
+    const target: DrillTarget = {
+      level: nextLevel,
+      parent: { geoid: parentGeoid, label: parentLabel, properties: parentProperties },
+      context: {
+        stateFips: parsed.stateFips ?? current.level.context.stateFips,
+        countyFips: parsed.countyFips ?? current.level.context.countyFips,
+        tractFips: parsed.tractFips ?? current.level.context.tractFips,
+      },
+    }
+
+    this.drilldown.setLoading(true)
+    try {
+      const binding = await this.options.drillProvider(target)
+      if (!binding) return
+
+      const newLevel: DrilldownLevel = {
+        id: `${nextLevel}:${parentGeoid}`,
+        label: `${parentLabel} → ${capitalize(nextLevel)}`,
+        level: nextLevel,
+        context: target.context,
+        parent: { geoid: parentGeoid, label: parentLabel },
+      }
+      this.drilldown.push(newLevel, binding)
+      this.outerView?.updateBinding(binding)
+    } catch (err) {
+      console.error('[LocalVision] Drill failed:', err)
+    } finally {
+      this.drilldown.setLoading(false)
+    }
   }
 
   on<K extends keyof LocalVisionEventMap>(
@@ -254,6 +328,9 @@ export class LocalVisionApp {
         theme: this.options.theme,
         headerEl: this.kpiSlotEl,
         selection: this.selection,
+        onDrillRequest: this.options.drillProvider
+          ? (c) => this.drillInto(c.id, c.label, c.properties)
+          : undefined,
       })
       this.forwardListeners(this.outerView)
     }
@@ -313,4 +390,86 @@ export class LocalVisionApp {
     const handlers = this.listeners[event] as ((e: LocalVisionEventMap[K]) => void)[] | undefined
     handlers?.forEach((h) => h(payload))
   }
+
+  // ── Private — drill-down ────────────────────────────────────────────────────
+
+  /**
+   * Seed the drill-down store with a root entry derived from the OuterCityView
+   * configuration. Only runs when a drillProvider is set; without one, the
+   * breadcrumb stays hidden.
+   */
+  private initializeDrilldownRoot(): void {
+    if (!this.options.drillProvider) return
+    const outerBinding = (this.options.outer as { binding?: DataBinding }).binding
+    if (!outerBinding) return
+
+    const root: DrilldownLevel =
+      this.options.rootDrilldownLevel ?? {
+        id: 'root',
+        label: this.deriveRootLabel(),
+        level: this.outerBoundary,
+        context: { stateFips: this.options.boundaryContext?.stateFips },
+      }
+    this.drilldown.setRoot(root, outerBinding)
+    this.breadcrumbEl.style.display = ''
+  }
+
+  private deriveRootLabel(): string {
+    const levelLabel = LEVEL_META[this.outerBoundary]?.label ?? this.outerBoundary
+    return levelLabel
+  }
+
+  private renderBreadcrumb(state: DrilldownState): void {
+    if (!this.options.drillProvider) return
+    this.breadcrumbEl.innerHTML = ''
+
+    state.stack.forEach((entry, i) => {
+      const isLast = i === state.stack.length - 1
+      const item = document.createElement('button')
+      item.className = `lv-breadcrumb-item${isLast ? ' lv-current' : ''}`
+      item.textContent = entry.level.label
+      item.disabled = isLast
+      item.addEventListener('click', () => {
+        if (isLast) return
+        const target = this.drilldown.popTo(i + 1)
+        if (target) this.outerView?.updateBinding(target.binding)
+      })
+      this.breadcrumbEl.appendChild(item)
+
+      if (!isLast) {
+        const sep = document.createElement('span')
+        sep.className = 'lv-breadcrumb-sep'
+        sep.textContent = '›'
+        this.breadcrumbEl.appendChild(sep)
+      }
+    })
+
+    if (state.loading) {
+      const loading = document.createElement('span')
+      loading.className = 'lv-breadcrumb-loading'
+      loading.textContent = 'loading…'
+      this.breadcrumbEl.appendChild(loading)
+    }
+  }
+}
+
+// ─── Drill-down helpers ──────────────────────────────────────────────────────
+
+/**
+ * Canonical drill paths for outer-city analysis. State → county → tract → bg.
+ * Returns null when there's no deeper level (block group is the floor).
+ */
+function nextDrillLevel(
+  from: OuterLevel | InnerLevel,
+): OuterLevel | InnerLevel | null {
+  switch (from) {
+    case 'state':  return 'county'
+    case 'county': return 'tract'
+    case 'tract':  return 'bg'
+    default:       return null
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }

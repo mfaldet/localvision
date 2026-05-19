@@ -105,12 +105,52 @@
       setLoading('Binding data to boundaries…')
       const binding = bindDataToBoundaries(boundaries, table)
 
+      // The set of ACS variables we fetch at every drill level.
+      const VARIABLES = [
+        'median_household_income',
+        'total_population',
+        'median_gross_rent',
+        'median_home_value',
+        'per_capita_income',
+      ]
+
       // 3. Render
       const app = new LocalVisionApp({
         container: '#app',
         defaultView: 'outer',
         defaultOuterBoundary: 'county',
         boundaryContext: { stateFips: '27' },
+        // Drill-down: county → tracts of that county → block groups of that tract
+        drillProvider: async ({ level, parent, context }) => {
+          console.log(`[drill] → ${level} for ${parent.label}`)
+          const stateFips = context.stateFips ?? '27'
+
+          // Boundaries
+          let boundariesPromise
+          if (level === 'tract') {
+            boundariesPromise = loader.tracts(stateFips, context.countyFips)
+          } else if (level === 'bg') {
+            boundariesPromise = loader.blockGroups(stateFips, context.countyFips)
+          } else {
+            console.warn(`[drill] no provider for level: ${level}`)
+            return null
+          }
+
+          // ACS data — same variables at every level
+          const tablePromise = acs.fetch({
+            variables: VARIABLES,
+            geography: { state: stateFips, level, county: context.countyFips },
+          })
+
+          const [b, t] = await Promise.all([boundariesPromise, tablePromise])
+          return bindDataToBoundaries(b, t)
+        },
+        rootDrilldownLevel: {
+          id: 'root',
+          label: 'Minnesota Counties',
+          level: 'county',
+          context: { stateFips: '27' },
+        },
         outer: {
           binding,
           activeKpi: 'median_household_income',

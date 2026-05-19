@@ -38,6 +38,17 @@ export type { BoundaryLoaderOptions, OuterLevel, InnerLevel, AnyLevel, LevelMeta
 export { SelectionStore } from './state/selection'
 export type { SelectionState, SelectionMode, SelectionListener } from './state/selection'
 
+// ─── Drill-down (Bundle 3) ───────────────────────────────────────────────────
+export { DrilldownStore, parseGeoId } from './state/drilldown'
+export type {
+  DrilldownLevel,
+  DrilldownEntry,
+  DrilldownState,
+  DrilldownListener,
+  DrillTarget,
+  DrillProvider,
+} from './state/drilldown'
+
 // ─── Data Foundation (Bundle 1) ──────────────────────────────────────────────
 export {
   CensusACS,

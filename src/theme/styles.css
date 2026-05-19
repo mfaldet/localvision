@@ -295,3 +295,60 @@
 .lv-map-pane .maplibregl-ctrl-attrib:hover {
   opacity: 1;
 }
+
+/* ── Breadcrumb (drill-down) ────────────────────────────────────────────── */
+
+.lv-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--lv-color-surface);
+  border-bottom: 1px solid var(--lv-color-border);
+  flex-shrink: 0;
+  font-size: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lv-breadcrumb::-webkit-scrollbar { display: none; }
+
+.lv-breadcrumb-item {
+  background: none;
+  border: none;
+  color: var(--lv-color-text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--lv-font);
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.lv-breadcrumb-item:hover:not(:disabled) {
+  color: var(--lv-color-text);
+  background: var(--lv-color-surface-elevated);
+}
+
+.lv-breadcrumb-item.lv-current {
+  color: var(--lv-color-text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.lv-breadcrumb-item:disabled { cursor: default; }
+
+.lv-breadcrumb-sep {
+  color: var(--lv-color-text-muted);
+  opacity: 0.5;
+  font-size: 14px;
+  user-select: none;
+}
+
+.lv-breadcrumb-loading {
+  margin-left: 8px;
+  color: var(--lv-color-text-muted);
+  font-size: 11px;
+  font-style: italic;
+}

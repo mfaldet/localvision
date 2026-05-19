@@ -34,6 +34,8 @@ export class OuterCityView {
   private selection: SelectionStore
   private unsubscribeSelection: () => void = () => {}
   private communityFids = new Map<string, number[]>()
+  private onDrillRequest?: (c: { id: string; label: string; properties: Record<string, unknown> }) => void
+  private drillButtonLabel?: string
   private listeners: Partial<{ [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[] }> = {}
   private resizeObserver: ResizeObserver
 
@@ -41,6 +43,8 @@ export class OuterCityView {
     this.theme = resolveTheme(options.theme)
     this.splitRatio = options.splitRatio ?? 0.5
     this.selection = options.selection ?? new SelectionStore()
+    this.onDrillRequest = options.onDrillRequest
+    this.drillButtonLabel = options.drillButtonLabel
 
     // Source of truth: a DataBinding (preferred) or hand-built communities.
     if (options.binding) {
@@ -153,6 +157,48 @@ export class OuterCityView {
       if (src) src.setData(this.buildMergedGeoJson() as GeoJSON.FeatureCollection)
       this.updateChoropleth()
     }
+    this.renderPanel()
+  }
+
+  /**
+   * Replace the current binding with a new one — used by drill-down to swap
+   * the choropleth data in place (e.g. from "MN counties" to "Hennepin
+   * County tracts"). The map source is updated rather than torn down,
+   * selection is cleared (old GEOIDs no longer apply), and the camera
+   * flies to the new extent.
+   */
+  updateBinding(binding: DataBinding): void {
+    this.communities = bindingToCommunities(binding)
+    const kpiDefs = bindingToKpiDefs(binding)
+    this.kpiDefs = new Map(kpiDefs.map((k) => [k.id, k]))
+
+    // Fall back to first available KPI if the previous active one is gone
+    if (!this.kpiDefs.has(this.activeKpi)) {
+      const first = [...this.kpiDefs.keys()][0]
+      if (first) this.activeKpi = first
+    }
+
+    this.selection.clear()
+
+    if (this.map.isStyleLoaded()) {
+      const source = this.map.getSource(COMMUNITIES_SOURCE) as
+        | maplibregl.GeoJSONSource
+        | undefined
+      if (source) {
+        source.setData(this.buildMergedGeoJson() as GeoJSON.FeatureCollection)
+      } else {
+        this.addCommunityLayers()
+      }
+      this.updateChoropleth()
+      this.fitToAllCommunities()
+    } else {
+      this.map.once('load', () => {
+        this.addCommunityLayers()
+        this.fitToAllCommunities()
+      })
+    }
+
+    this.renderKpiSelector()
     this.renderPanel()
   }
 
@@ -406,11 +452,33 @@ export class OuterCityView {
       })
     }
 
+    const btnRow = document.createElement('div')
+    btnRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;'
+
     const backBtn = document.createElement('button')
-    backBtn.style.cssText = `margin-top:12px;background:none;border:1px solid ${this.theme.colorBorder};color:${this.theme.colorTextMuted};padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;`
+    backBtn.style.cssText = `background:none;border:1px solid ${this.theme.colorBorder};color:${this.theme.colorTextMuted};padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;`
     backBtn.textContent = '← All communities'
     backBtn.addEventListener('click', () => this.selection.clear())
-    header.appendChild(backBtn)
+    btnRow.appendChild(backBtn)
+
+    // Drill-down button — only shown when a callback is provided
+    if (this.onDrillRequest) {
+      const drillBtn = document.createElement('button')
+      drillBtn.style.cssText = `background:${this.theme.colorPrimary};border:1px solid ${this.theme.colorPrimary};color:${this.theme.colorBackground};padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;`
+      drillBtn.textContent = this.drillButtonLabel ?? `Drill into ${community.label} ↓`
+      const feature = community.geojson.features[0]
+      const props = (feature?.properties as Record<string, unknown>) ?? {}
+      drillBtn.addEventListener('click', () => {
+        this.onDrillRequest?.({
+          id: community.id,
+          label: community.label,
+          properties: props,
+        })
+      })
+      btnRow.appendChild(drillBtn)
+    }
+
+    header.appendChild(btnRow)
     this.panelEl.appendChild(header)
 
     // KPI value cards
