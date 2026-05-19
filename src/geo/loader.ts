@@ -1,13 +1,14 @@
 /**
- * BoundaryLoader — fetches US Census geographic boundaries via two sources:
+ * BoundaryLoader — fetches US Census geographic boundaries from the Census
+ * TIGERweb REST API (https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/).
  *
- *  1. www2.census.gov static GeoJSON   — nation-scope files (states, all counties).
- *     Small, fast, CORS-enabled for national files.
+ * TIGERweb is a CORS-enabled ArcGIS REST service designed for web clients.
+ * All queries are paginated transparently (1000 features/page) so large
+ * results like national tract / block-group fetches complete reliably.
  *
- *  2. Census TIGERweb REST API          — state-scoped layers (tracts, block groups,
- *     places, school districts, legislative districts, etc.).
- *     Fully CORS-enabled ArcGIS REST service; paginated automatically.
- *     https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/
+ * Layer IDs are verified against the live service metadata; they are NOT
+ * sequential. Override via BoundaryLoaderOptions.layerOverrides if Census
+ * updates the service structure.
  */
 
 import type { GeoJsonFeatureCollection, GeoJsonFeature } from '../types'
@@ -16,38 +17,32 @@ import { resolveStateFips, padCountyFips } from './fips'
 
 // ─── Source config ────────────────────────────────────────────────────────────
 
-const CENSUS_YEAR = '2022'
-const STATIC_BASE = `https://www2.census.gov/geo/tiger/GENZ${CENSUS_YEAR}/json`
-
 const TIGERWEB_BASE =
   'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2022/MapServer'
 
-const TIGERWEB_CENSUS2020_BASE =
-  'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Census2020/MapServer'
-
 /**
- * Layer IDs within tigerWMS_ACS2022 MapServer.
- * These match the standard Census geography hierarchy ordering.
+ * Layer IDs within tigerWMS_ACS2022 MapServer. Verified by querying
+ * MapServer?f=json directly — Census layer IDs are not sequential and the
+ * library docs are stale.
+ *
+ * Note: `place` uses the Incorporated Places layer (24); CDPs are layer 26.
+ * If you need CDPs, override via BoundaryLoaderOptions.layerOverrides.
  */
 const ACS_LAYER: Record<string, number> = {
-  tract:  8,
-  bg:     10,
-  cousub: 12,
-  cd:     18,  // 118th Congress
-  sldu:   20,  // State Senate
-  sldl:   22,  // State House
-  unsd:   26,
-  scsd:   28,
-  elsd:   30,
-  place:  46,
-  county: 48,
-  state:  50,
+  zcta:   0,
+  tract:  6,
+  bg:     8,
+  unsd:   10,
+  scsd:   12,
+  elsd:   14,
+  cousub: 18,
+  place:  24,  // Incorporated Places. CDPs are layer 26.
+  cd:     50,  // 118th Congressional Districts
+  sldu:   52,  // 2022 State Legislative Districts — Upper
+  sldl:   54,  // 2022 State Legislative Districts — Lower
+  state:  76,
+  county: 78,
 }
-
-/**
- * ZCTAs live in the Census 2020 service (they're decennial, not ACS).
- */
-const ZCTA_LAYER = 2
 
 const PAGE_SIZE = 1000
 
@@ -80,20 +75,32 @@ export class BoundaryLoader {
 
   // ── Outer levels ─────────────────────────────────────────────────────────────
 
-  /** All 50 states + DC + territories (static national file). */
+  /** All 50 states + DC + territories. */
   states(): Promise<GeoJsonFeatureCollection> {
-    return this.fetchStatic(`cb_${CENSUS_YEAR}_us_state_500k.json`)
+    const layer = this.layers['state']
+    return this.tigerwebQueryRaw(
+      TIGERWEB_BASE,
+      layer,
+      '1=1',
+      ['NAME', 'GEOID', 'STATE'],
+      'tw:state:all',
+    )
   }
 
   /**
-   * Counties. Fetches the full national file then optionally filters to a state.
-   * @param stateFips - state FIPS, abbreviation, or full name (optional)
+   * Counties. When stateFips is provided (the common case), uses a state
+   * filter; otherwise fetches all US counties.
    */
-  async counties(stateFips?: string): Promise<GeoJsonFeatureCollection> {
-    const all = await this.fetchStatic(`cb_${CENSUS_YEAR}_us_county_500k.json`)
-    if (!stateFips) return all
-    const fips = resolveStateFips(stateFips)
-    return filterFeatures(all, (f) => String(f.properties?.['STATEFP'] ?? '') === fips)
+  counties(stateFips?: string): Promise<GeoJsonFeatureCollection> {
+    if (stateFips) return this.tigerwebQuery('county', stateFips)
+    const layer = this.layers['county']
+    return this.tigerwebQueryRaw(
+      TIGERWEB_BASE,
+      layer,
+      '1=1',
+      ['NAME', 'GEOID', 'STATE', 'COUNTY'],
+      'tw:county:all',
+    )
   }
 
   /**
@@ -133,15 +140,16 @@ export class BoundaryLoader {
   }
 
   /**
-   * ZIP Code Tabulation Areas — fetched from the Census 2020 service.
-   * This is a large dataset (~15 MB). Use filterByBbox() to trim to your area.
+   * ZIP Code Tabulation Areas (nationwide). Large dataset — use
+   * filterByBbox() to trim to your area before rendering.
    */
   zctas(): Promise<GeoJsonFeatureCollection> {
     return this.tigerwebQueryRaw(
-      TIGERWEB_CENSUS2020_BASE,
-      ZCTA_LAYER,
+      TIGERWEB_BASE,
+      this.layers['zcta'],
       '1=1',
-      ['GEOID20', 'ZCTA5CE20'],
+      ['GEOID', 'BASENAME'],
+      'tw:zcta:all',
     )
   }
 
@@ -236,18 +244,6 @@ export class BoundaryLoader {
         .filter((k) => k.startsWith('lv_geo_'))
         .forEach((k) => sessionStorage.removeItem(k))
     }
-  }
-
-  // ── Internal: static national files ──────────────────────────────────────────
-
-  private fetchStatic(filename: string): Promise<GeoJsonFeatureCollection> {
-    return this.cached(`static:${filename}`, () =>
-      fetch(`${STATIC_BASE}/${filename}`)
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${filename}`)
-          return r.json() as Promise<GeoJsonFeatureCollection>
-        }),
-    )
   }
 
   // ── Internal: TIGERweb paginated queries ──────────────────────────────────────
