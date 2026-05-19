@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LocalVision — ACS Data Binding (Minnesota)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0F1117; font-family: 'Inter', sans-serif; color: #F0F2FF; }
+
+    #app { width: 100%; height: 100vh; }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0F1117;
+      z-index: 999;
+      gap: 16px;
+      font-size: 14px;
+      color: #8B92B4;
+    }
+    #loading .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #2D3148;
+      border-top-color: #3B82F6;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    #loading.hidden { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #error {
+      position: fixed;
+      top: 16px; left: 50%;
+      transform: translateX(-50%);
+      background: #1A1D27;
+      border: 1px solid #ef4444;
+      border-radius: 8px;
+      padding: 16px 24px;
+      max-width: 560px;
+      font-size: 13px;
+      color: #fca5a5;
+      z-index: 1000;
+      display: none;
+    }
+    #error.visible { display: block; }
+    #error code { background: #0F1117; padding: 2px 6px; border-radius: 4px; color: #F0F2FF; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="loading-msg">Fetching Minnesota county boundaries…</div>
+  </div>
+  <div id="error"></div>
+  <div id="app"></div>
+
+  <script type="module">
+    import {
+      LocalVisionApp,
+      BoundaryLoader,
+      CensusACS,
+      bindDataToBoundaries,
+    } from '../src/index.ts'
+
+    const setLoading = (msg) => {
+      const el = document.getElementById('loading-msg')
+      if (el) el.textContent = msg
+    }
+    const hideLoading = () => document.getElementById('loading').classList.add('hidden')
+    const showError = (html) => {
+      const el = document.getElementById('error')
+      el.innerHTML = html
+      el.classList.add('visible')
+      hideLoading()
+    }
+
+    try {
+      const loader = new BoundaryLoader({ sessionCache: true })
+      const acs = new CensusACS({
+        apiKey: import.meta.env.VITE_CENSUS_API_KEY, // paste into .env.local
+        sessionCache: true,
+      })
+
+      // 1. Fetch county boundaries + ACS data in parallel
+      setLoading('Fetching MN county boundaries and ACS data in parallel…')
+      const [boundaries, table] = await Promise.all([
+        loader.counties('27'),
+        acs.fetch({
+          variables: [
+            'median_household_income',
+            'total_population',
+            'median_gross_rent',
+            'median_home_value',
+            'per_capita_income',
+          ],
+          geography: { state: '27', level: 'county' },
+        }),
+      ])
+
+      // 2. Join them by GEOID
+      setLoading('Binding data to boundaries…')
+      const binding = bindDataToBoundaries(boundaries, table)
+
+      // 3. Render
+      new LocalVisionApp({
+        container: '#app',
+        defaultView: 'outer',
+        defaultOuterBoundary: 'county',
+        boundaryContext: { stateFips: '27' },
+        outer: {
+          binding,
+          activeKpi: 'median_household_income',
+          map: { center: [-94.5, 46.3], zoom: 6 },
+        },
+        // Inner view kept stub-minimal — Bundle 4 (Time) is where it gets real
+        inner: {
+          boundary: {
+            type: 'FeatureCollection',
+            features: [{
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                  [-93.3060, 44.9550], [-93.2850, 44.9550],
+                  [-93.2850, 44.9420], [-93.3060, 44.9420],
+                  [-93.3060, 44.9550],
+                ]],
+              },
+              properties: { name: 'Uptown, Minneapolis' },
+            }],
+          },
+          map: { center: [-93.2955, 44.9485], zoom: 13 },
+          kpis: [{
+            id: 'placeholder',
+            label: 'Placeholder',
+            format: 'number',
+            data: [{ category: '2023', value: 1 }],
+          }],
+          charts: [{ type: 'bar', kpiId: 'placeholder', title: 'Inner view — ACS time-series coming in Bundle 4' }],
+        },
+      })
+
+      hideLoading()
+
+      console.log(`✓ Loaded ${binding.boundaries.features.length} counties × ${table.variables.length} ACS variables`)
+      console.table(
+        binding.boundaries.features.slice(0, 5).map((f) => ({
+          name: f.properties._lv_label,
+          income: f.properties.median_household_income,
+          rent: f.properties.median_gross_rent,
+          pop: f.properties.total_population,
+        })),
+      )
+    } catch (err) {
+      console.error(err)
+      const isKeyError = String(err.message).includes('key') || String(err.message).includes('400')
+      showError(`
+        <strong>Failed to load.</strong><br><br>
+        ${err.message}<br><br>
+        ${isKeyError ? `Likely missing API key. Create <code>.env.local</code> in the project root with:<br>
+        <code>VITE_CENSUS_API_KEY=your_key_here</code><br>
+        then restart the dev server.` : ''}
+      `)
+    }
+  </script>
+</body>
+</html>

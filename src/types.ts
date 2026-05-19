@@ -114,11 +114,21 @@ export interface CommunityRecord {
 
 export interface OuterCityOptions {
   container: string | HTMLElement
-  communities: CommunityRecord[]
+  /**
+   * Hand-built community records. Either `communities` OR `binding` must be
+   * provided. Mostly retained for quick demos; for real data use `binding`.
+   */
+  communities?: CommunityRecord[]
+  /**
+   * Boundary GeoJSON + tabular data joined by GEOID (from
+   * `bindDataToBoundaries`). When provided, takes precedence over
+   * `communities` and auto-derives `kpiDefs` from the table's variables.
+   */
+  binding?: import('./data/types').DataBinding
   /** Which KPI property drives the choropleth color */
   activeKpi: string
-  /** KPI definitions (label, format, color scale) */
-  kpiDefs: KpiDefinition[]
+  /** KPI definitions. Optional when `binding` is provided (auto-derived). */
+  kpiDefs?: KpiDefinition[]
   charts?: ChartConfig[]
   map?: MapOptions
   theme?: ThemeOverrides

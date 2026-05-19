@@ -7,6 +7,7 @@ import type {
   ChartConfig,
   LocalVisionEventMap,
 } from '../types'
+import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom, type ResolvedTheme } from '../theme/tokens'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -36,8 +37,19 @@ export class OuterCityView {
   constructor(options: OuterCityOptions) {
     this.theme = resolveTheme(options.theme)
     this.splitRatio = options.splitRatio ?? 0.5
-    this.communities = options.communities
-    this.kpiDefs = new Map(options.kpiDefs.map((k) => [k.id, k]))
+
+    // Source of truth: a DataBinding (preferred) or hand-built communities.
+    if (options.binding) {
+      this.communities = bindingToCommunities(options.binding)
+      const kpiDefs = options.kpiDefs ?? bindingToKpiDefs(options.binding)
+      this.kpiDefs = new Map(kpiDefs.map((k) => [k.id, k]))
+    } else if (options.communities) {
+      this.communities = options.communities
+      this.kpiDefs = new Map((options.kpiDefs ?? []).map((k) => [k.id, k]))
+    } else {
+      throw new Error('[LocalVision] OuterCityView requires either `binding` or `communities`.')
+    }
+
     this.activeKpi = options.activeKpi
     this.charts = options.charts ?? []
 
@@ -553,4 +565,38 @@ function collectCoords(geometry: CommunityRecord['geojson']['features'][0]['geom
     case 'LineString': return geometry.coordinates
     default: return []
   }
+}
+
+// ── Binding adapters ──────────────────────────────────────────────────────────
+
+/**
+ * Convert a DataBinding (boundaries + tabular data joined by GEOID) into the
+ * CommunityRecord[] shape that OuterCityView's renderer expects internally.
+ */
+function bindingToCommunities(binding: DataBinding): CommunityRecord[] {
+  return binding.boundaries.features.map((f) => {
+    const geoid = String(f.properties?.['_lv_geoid'] ?? '')
+    const label = String(f.properties?.['_lv_label'] ?? geoid)
+    const kpis: Record<string, number> = {}
+    for (const v of binding.table.variables) {
+      const val = f.properties?.[v.key]
+      if (typeof val === 'number') kpis[v.key] = val
+    }
+    return {
+      id: geoid,
+      label,
+      geojson: { type: 'FeatureCollection', features: [f] },
+      kpis,
+    }
+  })
+}
+
+/** Derive KPI definitions from a binding's variable metadata. */
+function bindingToKpiDefs(binding: DataBinding): KpiDefinition[] {
+  return binding.table.variables.map((v) => ({
+    id: v.key,
+    label: v.label,
+    format: v.format,
+    unit: v.unit,
+  }))
 }
