@@ -1,0 +1,180 @@
+/* ── LocalVision base styles ─────────────────────────────────────────────── */
+
+.lv-root {
+  --lv-font: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --lv-color-primary: #3B82F6;
+  --lv-color-accent: #10B981;
+  --lv-color-bg: #0F1117;
+  --lv-color-surface: #1A1D27;
+  --lv-color-surface-elevated: #22263A;
+  --lv-color-border: #2D3148;
+  --lv-color-text: #F0F2FF;
+  --lv-color-text-muted: #8B92B4;
+  --lv-radius: 8px;
+
+  font-family: var(--lv-font);
+  background: var(--lv-color-bg);
+  color: var(--lv-color-text);
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.lv-root *, .lv-root *::before, .lv-root *::after {
+  box-sizing: inherit;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
+.lv-map-pane {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.lv-chart-pane {
+  flex: 1;
+  height: 100%;
+  background: var(--lv-color-bg);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  gap: 1px;
+  border-left: 1px solid var(--lv-color-border);
+}
+
+/* ── Chart panel cards ───────────────────────────────────────────────────── */
+
+.lv-chart-card {
+  background: var(--lv-color-surface);
+  padding: 20px 24px 16px;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.lv-chart-card:hover {
+  background: var(--lv-color-surface-elevated);
+}
+
+.lv-chart-card.lv-active {
+  background: var(--lv-color-surface-elevated);
+  border-left: 3px solid var(--lv-color-primary);
+}
+
+.lv-chart-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lv-color-text-muted);
+  margin: 0 0 12px;
+}
+
+.lv-chart-container {
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ── KPI selector (OuterCity) ────────────────────────────────────────────── */
+
+.lv-kpi-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 24px;
+  background: var(--lv-color-surface);
+  border-bottom: 1px solid var(--lv-color-border);
+  flex-shrink: 0;
+}
+
+.lv-kpi-pill {
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lv-color-text-muted);
+  background: transparent;
+  border: 1px solid var(--lv-color-border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.lv-kpi-pill:hover {
+  color: var(--lv-color-text);
+  border-color: var(--lv-color-primary);
+}
+
+.lv-kpi-pill.lv-active {
+  color: var(--lv-color-bg);
+  background: var(--lv-color-primary);
+  border-color: var(--lv-color-primary);
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────────────────── */
+
+.lv-tooltip {
+  position: absolute;
+  z-index: 1000;
+  background: var(--lv-color-surface-elevated);
+  border: 1px solid var(--lv-color-border);
+  border-radius: var(--lv-radius);
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+  max-width: 220px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.1s ease;
+}
+
+.lv-tooltip-label {
+  font-weight: 600;
+  color: var(--lv-color-text);
+  margin-bottom: 4px;
+}
+
+.lv-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--lv-color-text-muted);
+}
+
+.lv-tooltip-row span:last-child {
+  color: var(--lv-color-text);
+  font-weight: 500;
+}
+
+/* ── Resize handle ───────────────────────────────────────────────────────── */
+
+.lv-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s ease;
+  transform: translateX(-50%);
+}
+
+.lv-resize-handle:hover,
+.lv-resize-handle.lv-dragging {
+  background: var(--lv-color-primary);
+}
+
+/* ── MapLibre overrides ──────────────────────────────────────────────────── */
+
+.lv-map-pane .maplibregl-ctrl-attrib {
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.lv-map-pane .maplibregl-ctrl-attrib:hover {
+  opacity: 1;
+}

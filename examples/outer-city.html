@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LocalVision — Outer City Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0F1117; }
+    #app { width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { OuterCityView } from '../src/index.ts'
+
+    // Example: Twin Cities metro suburbs (approximate boundaries)
+    const makeBox = (lng, lat, size = 0.04) => ({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [lng - size, lat + size],
+            [lng + size, lat + size],
+            [lng + size, lat - size],
+            [lng - size, lat - size],
+            [lng - size, lat + size],
+          ]],
+        },
+        properties: {},
+      }],
+    })
+
+    const view = new OuterCityView({
+      container: '#app',
+      map: { center: [-93.3, 44.97], zoom: 9 },
+      activeKpi: 'median_income',
+      kpiDefs: [
+        { id: 'median_income', label: 'Median Income',    format: 'currency' },
+        { id: 'population',    label: 'Population',       format: 'number' },
+        { id: 'vacancy_rate',  label: 'Vacancy Rate',     format: 'percent' },
+        { id: 'walk_score',    label: 'Walk Score',       format: 'rate', unit: '/100' },
+      ],
+      communities: [
+        {
+          id: 'minneapolis',
+          label: 'Minneapolis',
+          geojson: makeBox(-93.265, 44.977, 0.07),
+          kpis: { median_income: 64000, population: 425000, vacancy_rate: 0.062, walk_score: 72 },
+          meta: { County: 'Hennepin', Founded: '1867' },
+        },
+        {
+          id: 'saint-paul',
+          label: 'Saint Paul',
+          geojson: makeBox(-93.090, 44.954, 0.065),
+          kpis: { median_income: 58000, population: 311000, vacancy_rate: 0.071, walk_score: 64 },
+          meta: { County: 'Ramsey', Founded: '1854' },
+        },
+        {
+          id: 'bloomington',
+          label: 'Bloomington',
+          geojson: makeBox(-93.310, 44.840, 0.055),
+          kpis: { median_income: 78000, population: 89000, vacancy_rate: 0.042, walk_score: 38 },
+          meta: { County: 'Hennepin', Founded: '1953' },
+        },
+        {
+          id: 'plymouth',
+          label: 'Plymouth',
+          geojson: makeBox(-93.456, 44.999, 0.052),
+          kpis: { median_income: 91000, population: 82000, vacancy_rate: 0.031, walk_score: 29 },
+          meta: { County: 'Hennepin', Founded: '1955' },
+        },
+        {
+          id: 'eden-prairie',
+          label: 'Eden Prairie',
+          geojson: makeBox(-93.471, 44.854, 0.052),
+          kpis: { median_income: 96000, population: 64000, vacancy_rate: 0.028, walk_score: 33 },
+          meta: { County: 'Hennepin', Founded: '1974' },
+        },
+        {
+          id: 'eagan',
+          label: 'Eagan',
+          geojson: makeBox(-93.167, 44.804, 0.05),
+          kpis: { median_income: 83000, population: 68000, vacancy_rate: 0.037, walk_score: 31 },
+          meta: { County: 'Dakota', Founded: '1974' },
+        },
+        {
+          id: 'maple-grove',
+          label: 'Maple Grove',
+          geojson: makeBox(-93.456, 45.073, 0.05),
+          kpis: { median_income: 98000, population: 71000, vacancy_rate: 0.025, walk_score: 24 },
+          meta: { County: 'Hennepin', Founded: '1975' },
+        },
+        {
+          id: 'brooklyn-park',
+          label: 'Brooklyn Park',
+          geojson: makeBox(-93.374, 45.094, 0.048),
+          kpis: { median_income: 67000, population: 79000, vacancy_rate: 0.055, walk_score: 41 },
+          meta: { County: 'Hennepin', Founded: '1969' },
+        },
+      ],
+    })
+
+    view.on('featureSelect', (e) => {
+      console.log('Selected community:', e.featureId)
+    })
+  </script>
+</body>
+</html>

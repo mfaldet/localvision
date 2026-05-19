@@ -1,0 +1,165 @@
+import type { StyleSpecification } from 'maplibre-gl'
+
+// ─── Geo ──────────────────────────────────────────────────────────────────────
+
+export interface GeoJsonFeatureCollection {
+  type: 'FeatureCollection'
+  features: GeoJsonFeature[]
+}
+
+export interface GeoJsonFeature {
+  type: 'Feature'
+  geometry: GeoJsonGeometry
+  properties: Record<string, unknown>
+}
+
+export type GeoJsonGeometry =
+  | { type: 'Polygon'; coordinates: number[][][] }
+  | { type: 'MultiPolygon'; coordinates: number[][][][] }
+  | { type: 'Point'; coordinates: number[] }
+  | { type: 'LineString'; coordinates: number[][] }
+
+// ─── KPI data ─────────────────────────────────────────────────────────────────
+
+export type KpiFormat = 'number' | 'percent' | 'currency' | 'rate'
+
+export interface KpiSeries {
+  /** Machine-readable identifier, used for cross-linking */
+  id: string
+  label: string
+  format?: KpiFormat
+  unit?: string
+  /** Ordered array of data points */
+  data: KpiDataPoint[]
+}
+
+export interface KpiDataPoint {
+  /** Category label (e.g. year, neighborhood name, age bracket) */
+  category: string | number
+  value: number
+  /** Optional second dimension for scatter plots */
+  value2?: number
+}
+
+// ─── Layer configuration ──────────────────────────────────────────────────────
+
+export type LayerType = 'fill' | 'line' | 'circle' | 'symbol'
+
+export interface LayerConfig {
+  id: string
+  type: LayerType
+  /** GeoJSON source or a URL to a GeoJSON file */
+  source: GeoJsonFeatureCollection | string
+  /** MapLibre paint properties */
+  paint?: Record<string, unknown>
+  /** MapLibre layout properties */
+  layout?: Record<string, unknown>
+  /** Property name used to color-encode features */
+  colorProperty?: string
+  colorScale?: string[]
+  visible?: boolean
+  opacity?: number
+}
+
+// ─── Chart configuration ──────────────────────────────────────────────────────
+
+export type ChartType = 'bar' | 'line' | 'area' | 'scatter' | 'donut'
+
+export interface ChartConfig {
+  type: ChartType
+  kpiId: string
+  title?: string
+  /** Override inferred color from theme */
+  color?: string
+  height?: number
+}
+
+// ─── View options ─────────────────────────────────────────────────────────────
+
+export interface MapOptions {
+  style?: string | StyleSpecification
+  center?: [number, number]
+  zoom?: number
+  bearing?: number
+  pitch?: number
+}
+
+export interface InnerCityOptions {
+  /** CSS selector or HTMLElement to mount into */
+  container: string | HTMLElement
+  /** GeoJSON defining the community boundary */
+  boundary: GeoJsonFeatureCollection
+  /** KPI data series for this community */
+  kpis: KpiSeries[]
+  /** Charts to render in the panel; order determines layout order */
+  charts?: ChartConfig[]
+  /** Additional map layers beyond the boundary fill */
+  layers?: LayerConfig[]
+  map?: MapOptions
+  theme?: ThemeOverrides
+  /** Split ratio: map fraction of total width (0–1, default 0.5) */
+  splitRatio?: number
+}
+
+export interface CommunityRecord {
+  id: string
+  label: string
+  /** GeoJSON for this community */
+  geojson: GeoJsonFeatureCollection
+  kpis: Record<string, number>
+  /** Metadata fields shown in tooltip / detail panel */
+  meta?: Record<string, string | number>
+}
+
+export interface OuterCityOptions {
+  container: string | HTMLElement
+  communities: CommunityRecord[]
+  /** Which KPI property drives the choropleth color */
+  activeKpi: string
+  /** KPI definitions (label, format, color scale) */
+  kpiDefs: KpiDefinition[]
+  charts?: ChartConfig[]
+  map?: MapOptions
+  theme?: ThemeOverrides
+  splitRatio?: number
+}
+
+export interface KpiDefinition {
+  id: string
+  label: string
+  format?: KpiFormat
+  unit?: string
+  colorScale?: string[]
+}
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+export interface ThemeOverrides {
+  fontFamily?: string
+  colorPrimary?: string
+  colorAccent?: string
+  colorBackground?: string
+  colorSurface?: string
+  colorText?: string
+  colorTextMuted?: string
+  borderRadius?: string
+  mapStyle?: string | StyleSpecification
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+export interface FeatureSelectEvent {
+  featureId: string | number | null
+  properties: Record<string, unknown>
+  lngLat: [number, number]
+}
+
+export interface KpiSelectEvent {
+  kpiId: string
+}
+
+export type LocalVisionEventMap = {
+  featureSelect: FeatureSelectEvent
+  featureDeselect: never
+  kpiSelect: KpiSelectEvent
+}

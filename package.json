@@ -1,0 +1,30 @@
+{
+  "name": "localvision",
+  "version": "0.1.0",
+  "description": "Beautiful community data visualization — interactive maps + linked KPI charts",
+  "type": "module",
+  "main": "./dist/localvision.umd.cjs",
+  "module": "./dist/localvision.js",
+  "exports": {
+    ".": {
+      "import": "./dist/localvision.js",
+      "require": "./dist/localvision.umd.cjs"
+    },
+    "./styles": "./dist/style.css"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@observablehq/plot": "^0.6.16",
+    "maplibre-gl": "^4.7.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-dts": "^4.3.0"
+  }
+}
