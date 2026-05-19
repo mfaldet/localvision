@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LocalVision — Boundaries Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0F1117; font-family: 'Inter', sans-serif; }
+
+    #controls {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #1A1D27;
+      border: 1px solid #2D3148;
+      border-radius: 8px;
+      padding: 16px;
+      width: 260px;
+    }
+
+    #controls h3 { color: #F0F2FF; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    #controls label { color: #8B92B4; font-size: 11px; font-weight: 500; display: block; margin-bottom: 4px; }
+
+    #controls select, #controls input {
+      width: 100%;
+      background: #0F1117;
+      border: 1px solid #2D3148;
+      border-radius: 4px;
+      color: #F0F2FF;
+      font-size: 12px;
+      padding: 6px 8px;
+    }
+
+    #controls button {
+      width: 100%;
+      padding: 8px;
+      background: #3B82F6;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #controls button:hover { background: #2563eb; }
+    #controls button:disabled { background: #2D3148; color: #8B92B4; cursor: not-allowed; }
+
+    #status {
+      font-size: 11px;
+      color: #8B92B4;
+      min-height: 16px;
+    }
+
+    #app { width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h3>Census Boundary Loader</h3>
+
+    <div>
+      <label>State</label>
+      <select id="state-select">
+        <option value="27">Minnesota (27)</option>
+        <option value="17">Illinois (17)</option>
+        <option value="06">California (06)</option>
+        <option value="48">Texas (48)</option>
+        <option value="36">New York (36)</option>
+        <option value="12">Florida (12)</option>
+        <option value="53">Washington (53)</option>
+        <option value="39">Ohio (39)</option>
+      </select>
+    </div>
+
+    <div>
+      <label>Inner level</label>
+      <select id="level-select">
+        <option value="tract">Census Tracts</option>
+        <option value="bg">Block Groups</option>
+        <option value="place">Places / CDPs</option>
+        <option value="cousub">County Subdivisions</option>
+        <option value="cd">Congressional Districts</option>
+        <option value="unsd">Unified School Districts</option>
+        <option value="sldl">State House Districts</option>
+        <option value="sldu">State Senate Districts</option>
+      </select>
+    </div>
+
+    <div>
+      <label>County FIPS filter (optional, tracts/bg only)</label>
+      <input id="county-input" type="text" placeholder="e.g. 053 for Hennepin" />
+    </div>
+
+    <button id="load-btn">Load Boundaries</button>
+    <div id="status">Choose a state and level, then click Load.</div>
+  </div>
+
+  <div id="app"></div>
+
+  <script type="module">
+    import maplibregl from 'https://esm.sh/maplibre-gl@4'
+    import { BoundaryLoader, LEVEL_META } from '../src/index.ts'
+
+    // Init map
+    const map = new maplibregl.Map({
+      container: 'app',
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      center: [-93.3, 44.97],
+      zoom: 6,
+    })
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+
+    const loader = new BoundaryLoader({ sessionCache: true })
+
+    const SOURCE_ID = 'lv-boundaries'
+    const FILL_ID = 'lv-fill'
+    const LINE_ID = 'lv-line'
+
+    map.on('load', () => {
+      map.addSource(SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+      map.addLayer({
+        id: FILL_ID,
+        type: 'fill',
+        source: SOURCE_ID,
+        paint: { 'fill-color': '#3B82F6', 'fill-opacity': 0.12 },
+      })
+      map.addLayer({
+        id: LINE_ID,
+        type: 'line',
+        source: SOURCE_ID,
+        paint: { 'line-color': '#3B82F6', 'line-width': 1, 'line-opacity': 0.8 },
+      })
+    })
+
+    document.getElementById('load-btn').addEventListener('click', async () => {
+      const stateFips = document.getElementById('state-select').value
+      const level = document.getElementById('level-select').value
+      const countyFips = document.getElementById('county-input').value.trim() || undefined
+      const btn = document.getElementById('load-btn')
+      const status = document.getElementById('status')
+
+      btn.disabled = true
+      const meta = LEVEL_META[level]
+      status.textContent = `Fetching ${meta.label}…`
+
+      try {
+        const geojson = await loader.innerLevel(level, stateFips, countyFips)
+        const src = map.getSource(SOURCE_ID)
+        if (src) src.setData(geojson)
+
+        // Fit to loaded features
+        const bounds = new maplibregl.LngLatBounds()
+        geojson.features.forEach((f) => {
+          const coords = collectCoords(f.geometry)
+          coords.forEach(([lng, lat]) => bounds.extend([lng, lat]))
+        })
+        if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 80, duration: 800 })
+
+        status.textContent = `✓ Loaded ${geojson.features.length} ${meta.label} features`
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`
+        console.error(err)
+      } finally {
+        btn.disabled = false
+      }
+    })
+
+    function collectCoords(geometry) {
+      switch (geometry.type) {
+        case 'Polygon':      return geometry.coordinates.flat()
+        case 'MultiPolygon': return geometry.coordinates.flat(2)
+        case 'Point':        return [geometry.coordinates]
+        case 'LineString':   return geometry.coordinates
+        default:             return []
+      }
+    }
+  </script>
+</body>
+</html>

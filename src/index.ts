@@ -28,3 +28,6 @@ export type {
 
 export { DEFAULT_THEME } from './theme/tokens'
 export type { ResolvedTheme } from './theme/tokens'
+
+export { BoundaryLoader, LEVEL_META, STATES, resolveStateFips, padCountyFips, getStateMeta } from './geo/index'
+export type { BoundaryLoaderOptions, OuterLevel, InnerLevel, AnyLevel, LevelMeta, StateMeta } from './geo/index'
