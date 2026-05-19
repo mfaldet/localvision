@@ -34,6 +34,10 @@ export type { ResolvedTheme } from './theme/tokens'
 export { BoundaryLoader, LEVEL_META, STATES, resolveStateFips, padCountyFips, getStateMeta } from './geo/index'
 export type { BoundaryLoaderOptions, OuterLevel, InnerLevel, AnyLevel, LevelMeta, StateMeta } from './geo/index'
 
+// ─── Cross-filtering (Bundle 2) ──────────────────────────────────────────────
+export { SelectionStore } from './state/selection'
+export type { SelectionState, SelectionMode, SelectionListener } from './state/selection'
+
 // ─── Data Foundation (Bundle 1) ──────────────────────────────────────────────
 export {
   CensusACS,

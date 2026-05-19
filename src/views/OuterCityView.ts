@@ -8,6 +8,7 @@ import type {
   LocalVisionEventMap,
 } from '../types'
 import type { DataBinding } from '../data/types'
+import { SelectionStore } from '../state/selection'
 import { resolveTheme, applyThemeToDom, type ResolvedTheme } from '../theme/tokens'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -30,13 +31,16 @@ export class OuterCityView {
   private activeKpi: string
   private charts: ChartConfig[]
   private splitRatio: number
-  private selectedId: string | null = null
+  private selection: SelectionStore
+  private unsubscribeSelection: () => void = () => {}
+  private communityFids = new Map<string, number[]>()
   private listeners: Partial<{ [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[] }> = {}
   private resizeObserver: ResizeObserver
 
   constructor(options: OuterCityOptions) {
     this.theme = resolveTheme(options.theme)
     this.splitRatio = options.splitRatio ?? 0.5
+    this.selection = options.selection ?? new SelectionStore()
 
     // Source of truth: a DataBinding (preferred) or hand-built communities.
     if (options.binding) {
@@ -107,6 +111,14 @@ export class OuterCityView {
     this.map.on('load', () => {
       this.addCommunityLayers()
       this.fitToAllCommunities()
+      // Apply any selection state that arrived before the map was ready
+      this.syncMapSelection(this.selection.getSnapshot().selected)
+    })
+
+    // Cross-component selection: re-render + sync map on every store change.
+    this.unsubscribeSelection = this.selection.subscribe((state) => {
+      this.syncMapSelection(state.selected)
+      this.renderPanel()
     })
 
     this.renderKpiSelector()
@@ -177,6 +189,7 @@ export class OuterCityView {
   }
 
   destroy(): void {
+    this.unsubscribeSelection()
     this.resizeObserver.disconnect()
     this.map.remove()
     this.root.innerHTML = ''
@@ -186,22 +199,29 @@ export class OuterCityView {
   // ── Private ─────────────────────────────────────────────────────────────────
 
   private buildMergedGeoJson() {
-    return {
-      type: 'FeatureCollection',
-      features: this.communities.flatMap((c) =>
-        c.geojson.features.map((f) => ({
+    const features: unknown[] = []
+    this.communityFids.clear()
+    let nextId = 0
+    for (const c of this.communities) {
+      const fids: number[] = []
+      for (const f of c.geojson.features) {
+        features.push({
           ...f,
+          id: nextId,
           properties: { ...f.properties, _lv_id: c.id, _lv_label: c.label, ...c.kpis },
-        })),
-      ),
+        })
+        fids.push(nextId)
+        nextId++
+      }
+      this.communityFids.set(c.id, fids)
     }
+    return { type: 'FeatureCollection', features }
   }
 
   private addCommunityLayers(): void {
     this.map.addSource(COMMUNITIES_SOURCE, {
       type: 'geojson',
       data: this.buildMergedGeoJson() as GeoJSON.FeatureCollection,
-      generateId: true,
     })
 
     // Choropleth fill — color driven by active KPI
@@ -268,29 +288,33 @@ export class OuterCityView {
       if (!e.features?.length) return
       const props = e.features[0].properties as Record<string, string>
       const cid = props['_lv_id'] ?? null
-      const fid = e.features[0].id ?? null
 
-      if (this.selectedId !== null) {
-        const prev = this.communities.find((c) => c.id === this.selectedId)
-        if (prev) {
-          prev.geojson.features.forEach((_, i) => {
-            this.map.setFeatureState({ source: COMMUNITIES_SOURCE, id: i }, { selected: false })
-          })
-        }
-      }
-
-      this.selectedId = cid
-      if (fid !== null) {
-        this.map.setFeatureState({ source: COMMUNITIES_SOURCE, id: fid }, { selected: true })
-      }
+      // Dispatch to store — subscription handles visual updates
+      if (cid) this.selection.selectFeatures([cid], 'replace')
 
       this.emit('featureSelect', {
         featureId: cid,
         properties: props,
         lngLat: [e.lngLat.lng, e.lngLat.lat],
       })
+    })
+  }
 
-      this.renderPanel()
+  /**
+   * Apply current selection state to map feature-state. Called from the
+   * store subscription so the map stays in sync regardless of who
+   * dispatched the change.
+   */
+  private syncMapSelection(selected: ReadonlySet<string>): void {
+    if (!this.map.isStyleLoaded()) return
+    this.communityFids.forEach((fids, geoid) => {
+      const isSelected = selected.has(geoid)
+      for (const fid of fids) {
+        this.map.setFeatureState(
+          { source: COMMUNITIES_SOURCE, id: fid },
+          { selected: isSelected },
+        )
+      }
     })
   }
 
@@ -351,7 +375,10 @@ export class OuterCityView {
   private renderPanel(): void {
     this.panelEl.innerHTML = ''
     const panelWidth = this.panelEl.clientWidth || 400
-    const selected = this.communities.find((c) => c.id === this.selectedId)
+    const selectedIds = this.selection.getSnapshot().selected
+    // Single-select shows detail view; 0 or multi shows comparison
+    const singleId = selectedIds.size === 1 ? [...selectedIds][0] : null
+    const selected = singleId ? this.communities.find((c) => c.id === singleId) : null
 
     if (selected) {
       this.renderCommunityDetail(selected, panelWidth)
@@ -382,10 +409,7 @@ export class OuterCityView {
     const backBtn = document.createElement('button')
     backBtn.style.cssText = `margin-top:12px;background:none;border:1px solid ${this.theme.colorBorder};color:${this.theme.colorTextMuted};padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;`
     backBtn.textContent = '← All communities'
-    backBtn.addEventListener('click', () => {
-      this.selectedId = null
-      this.renderPanel()
-    })
+    backBtn.addEventListener('click', () => this.selection.clear())
     header.appendChild(backBtn)
     this.panelEl.appendChild(header)
 
@@ -430,11 +454,18 @@ export class OuterCityView {
     card.appendChild(chartEl)
     this.panelEl.appendChild(card)
 
+    const selectedIds = this.selection.getSnapshot().selected
     const data = [...this.communities]
       .sort((a, b) => (b.kpis[this.activeKpi] ?? 0) - (a.kpis[this.activeKpi] ?? 0))
-      .map((c) => ({ label: c.label, value: c.kpis[this.activeKpi] ?? 0 }))
+      .map((c) => ({
+        id: c.id,
+        label: c.label,
+        value: c.kpis[this.activeKpi] ?? 0,
+        selected: selectedIds.has(c.id),
+      }))
 
     const height = Math.max(200, data.length * 32 + 48)
+    const hasSelection = selectedIds.size > 0
 
     const plot = Plot.plot({
       width: width - 48,
@@ -462,8 +493,10 @@ export class OuterCityView {
         Plot.barX(data, {
           y: 'label',
           x: 'value',
-          fill: this.theme.colorPrimary,
-          fillOpacity: 0.85,
+          fill: (d: { selected: boolean }) =>
+            d.selected ? this.theme.colorAccent : this.theme.colorPrimary,
+          fillOpacity: (d: { selected: boolean }) =>
+            hasSelection ? (d.selected ? 1 : 0.25) : 0.85,
           rx: 3,
           sort: { y: '-x' },
           tip: true,
@@ -473,6 +506,28 @@ export class OuterCityView {
     })
 
     chartEl.appendChild(plot)
+
+    // Bidirectional: click a bar → dispatch selection
+    // Plot renders one <rect> per data row in chart order. The data array is
+    // sorted descending, so index i matches data[i].
+    const rects = plot.querySelectorAll('rect[fill]')
+    const dataRects = Array.from(rects).filter((r) => {
+      // skip background/grid rects; data rects have an x attribute > 0
+      const x = parseFloat(r.getAttribute('x') ?? '0')
+      return x > 0 || r.getAttribute('width') !== '0'
+    })
+    if (dataRects.length === data.length) {
+      dataRects.forEach((rect, i) => {
+        const datum = data[i]
+        ;(rect as SVGElement).style.cursor = 'pointer'
+        rect.addEventListener('click', (e) => {
+          e.stopPropagation()
+          // Toggle: clicking the already-selected bar clears
+          if (datum.selected) this.selection.clear()
+          else this.selection.selectFeatures([datum.id], 'replace')
+        })
+      })
+    }
   }
 
   private buildTooltip(): HTMLElement {

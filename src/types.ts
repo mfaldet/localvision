@@ -12,6 +12,7 @@ export interface GeoJsonFeature {
   type: 'Feature'
   geometry: GeoJsonGeometry
   properties: Record<string, unknown>
+  id?: string | number
 }
 
 export type GeoJsonGeometry =
@@ -135,6 +136,12 @@ export interface OuterCityOptions {
   splitRatio?: number
   /** When provided, KPI pills render here instead of an internal header bar */
   headerEl?: HTMLElement
+  /**
+   * Shared selection store for cross-component linking. When omitted, the
+   * view creates an internal store. Pass `LocalVisionApp`'s selection store
+   * here to link this view with other components.
+   */
+  selection?: import('./state/selection').SelectionStore
 }
 
 // ─── Combined app ─────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import type {
 import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
 import { BoundaryLoader } from '../geo/loader'
+import { SelectionStore } from '../state/selection'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
 import { OuterCityView } from './OuterCityView'
@@ -41,6 +42,7 @@ export class LocalVisionApp {
   private outerView: OuterCityView | null = null
   private options: LocalVisionAppOptions
   private geoLoader: BoundaryLoader
+  private selection: SelectionStore
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
@@ -51,6 +53,7 @@ export class LocalVisionApp {
     this.innerBoundary = options.defaultInnerBoundary ?? 'tract'
     this.outerBoundary = options.defaultOuterBoundary ?? 'county'
     this.geoLoader = new BoundaryLoader({ sessionCache: true })
+    this.selection = new SelectionStore()
 
     const theme = resolveTheme(options.theme)
 
@@ -113,6 +116,14 @@ export class LocalVisionApp {
   /** Read the currently selected boundary level. */
   get boundary(): OuterLevel | InnerLevel {
     return this.boundarySelectEl.value as OuterLevel | InnerLevel
+  }
+
+  /**
+   * Shared selection store. Subscribe to receive cross-component selection
+   * updates from any view, or mutate to drive selection from external code.
+   */
+  get selectionStore(): SelectionStore {
+    return this.selection
   }
 
   on<K extends keyof LocalVisionEventMap>(
@@ -242,6 +253,7 @@ export class LocalVisionApp {
         container,
         theme: this.options.theme,
         headerEl: this.kpiSlotEl,
+        selection: this.selection,
       })
       this.forwardListeners(this.outerView)
     }

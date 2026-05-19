@@ -106,7 +106,7 @@
       const binding = bindDataToBoundaries(boundaries, table)
 
       // 3. Render
-      new LocalVisionApp({
+      const app = new LocalVisionApp({
         container: '#app',
         defaultView: 'outer',
         defaultOuterBoundary: 'county',
@@ -145,6 +145,21 @@
       })
 
       hideLoading()
+
+      // Bundle 2: cross-filter subscription. The store fires whenever any
+      // component (map click, bar chart click, "← All communities" button,
+      // or programmatic mutation) changes the selection.
+      app.selectionStore.subscribe((state) => {
+        const ids = [...state.selected]
+        if (ids.length === 0) {
+          console.log('[selection] cleared')
+        } else {
+          const names = ids
+            .map((id) => binding.boundaries.features.find((f) => f.properties._lv_geoid === id))
+            .map((f) => f?.properties._lv_label ?? '?')
+          console.log(`[selection] ${names.join(', ')}`)
+        }
+      })
 
       console.log(`✓ Loaded ${binding.boundaries.features.length} counties × ${table.variables.length} ACS variables`)
       console.table(
