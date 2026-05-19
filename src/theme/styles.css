@@ -149,6 +149,84 @@
   font-weight: 500;
 }
 
+/* ── App header (LocalVisionApp) ─────────────────────────────────────────── */
+
+.lv-app-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 48px;
+  background: var(--lv-color-surface);
+  border-bottom: 1px solid var(--lv-color-border);
+  flex-shrink: 0;
+}
+
+.lv-app-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* View toggle — segmented control */
+.lv-view-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--lv-color-bg);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.lv-view-toggle-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lv-color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.lv-view-toggle-btn:hover {
+  color: var(--lv-color-text);
+}
+
+.lv-view-toggle-btn.lv-active {
+  background: var(--lv-color-surface-elevated);
+  color: var(--lv-color-text);
+}
+
+/* Separator between toggle and KPI pills */
+.lv-header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--lv-color-border);
+  flex-shrink: 0;
+}
+
+/* KPI pills inside the app header reuse .lv-kpi-pill but need no padding override */
+.lv-app-header .lv-kpi-selector {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lv-app-header .lv-kpi-selector::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Resize handle ───────────────────────────────────────────────────────── */
 
 .lv-resize-handle {

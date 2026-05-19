@@ -122,6 +122,22 @@ export interface OuterCityOptions {
   map?: MapOptions
   theme?: ThemeOverrides
   splitRatio?: number
+  /** When provided, KPI pills render here instead of an internal header bar */
+  headerEl?: HTMLElement
+}
+
+// ─── Combined app ─────────────────────────────────────────────────────────────
+
+export type ViewMode = 'inner' | 'outer'
+
+export interface LocalVisionAppOptions {
+  container: string | HTMLElement
+  defaultView?: ViewMode
+  /** Options for InnerCityView (container is managed internally) */
+  inner: Omit<InnerCityOptions, 'container'>
+  /** Options for OuterCityView (container is managed internally) */
+  outer: Omit<OuterCityOptions, 'container' | 'headerEl'>
+  theme?: ThemeOverrides
 }
 
 export interface KpiDefinition {

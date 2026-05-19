@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LocalVision — Combined Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0F1117; }
+    #app { width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { LocalVisionApp } from '../src/index.ts'
+
+    const makeBox = (lng, lat, size = 0.04) => ({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [lng - size, lat + size],
+            [lng + size, lat + size],
+            [lng + size, lat - size],
+            [lng - size, lat - size],
+            [lng - size, lat + size],
+          ]],
+        },
+        properties: {},
+      }],
+    })
+
+    const app = new LocalVisionApp({
+      container: '#app',
+      defaultView: 'outer',
+
+      inner: {
+        boundary: {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[
+                [-93.3060, 44.9550],
+                [-93.2850, 44.9550],
+                [-93.2850, 44.9420],
+                [-93.3060, 44.9420],
+                [-93.3060, 44.9550],
+              ]],
+            },
+            properties: { name: 'Uptown' },
+          }],
+        },
+        map: { center: [-93.2955, 44.9485], zoom: 13 },
+        kpis: [
+          {
+            id: 'median_income',
+            label: 'Median Household Income',
+            format: 'currency',
+            data: [
+              { category: '2018', value: 52000 },
+              { category: '2019', value: 55000 },
+              { category: '2020', value: 51000 },
+              { category: '2021', value: 57000 },
+              { category: '2022', value: 61000 },
+              { category: '2023', value: 64000 },
+            ],
+          },
+          {
+            id: 'population',
+            label: 'Population',
+            format: 'number',
+            data: [
+              { category: '2018', value: 18200 },
+              { category: '2019', value: 18450 },
+              { category: '2020', value: 17900 },
+              { category: '2021', value: 18100 },
+              { category: '2022', value: 18700 },
+              { category: '2023', value: 19100 },
+            ],
+          },
+          {
+            id: 'vacancy_rate',
+            label: 'Vacancy Rate',
+            format: 'percent',
+            data: [
+              { category: '2018', value: 0.068 },
+              { category: '2019', value: 0.058 },
+              { category: '2020', value: 0.092 },
+              { category: '2021', value: 0.074 },
+              { category: '2022', value: 0.051 },
+              { category: '2023', value: 0.044 },
+            ],
+          },
+          {
+            id: 'age_distribution',
+            label: 'Age Distribution',
+            format: 'number',
+            data: [
+              { category: 'Under 18', value: 2100 },
+              { category: '18–34', value: 7800 },
+              { category: '35–54', value: 5200 },
+              { category: '55–74', value: 2800 },
+              { category: '75+', value: 1200 },
+            ],
+          },
+        ],
+        charts: [
+          { type: 'line', kpiId: 'median_income',   title: 'Median Income (6-year trend)' },
+          { type: 'area', kpiId: 'population',       title: 'Population (6-year trend)' },
+          { type: 'bar',  kpiId: 'vacancy_rate',     title: 'Vacancy Rate' },
+          { type: 'bar',  kpiId: 'age_distribution', title: 'Age Distribution' },
+        ],
+      },
+
+      outer: {
+        map: { center: [-93.3, 44.97], zoom: 9 },
+        activeKpi: 'median_income',
+        kpiDefs: [
+          { id: 'median_income', label: 'Median Income',  format: 'currency' },
+          { id: 'population',    label: 'Population',     format: 'number' },
+          { id: 'vacancy_rate',  label: 'Vacancy Rate',   format: 'percent' },
+          { id: 'walk_score',    label: 'Walk Score',     format: 'rate', unit: '/100' },
+        ],
+        communities: [
+          { id: 'minneapolis',   label: 'Minneapolis',   geojson: makeBox(-93.265, 44.977, 0.07),  kpis: { median_income: 64000, population: 425000, vacancy_rate: 0.062, walk_score: 72 }, meta: { County: 'Hennepin', Founded: '1867' } },
+          { id: 'saint-paul',    label: 'Saint Paul',    geojson: makeBox(-93.090, 44.954, 0.065), kpis: { median_income: 58000, population: 311000, vacancy_rate: 0.071, walk_score: 64 }, meta: { County: 'Ramsey',   Founded: '1854' } },
+          { id: 'bloomington',   label: 'Bloomington',   geojson: makeBox(-93.310, 44.840, 0.055), kpis: { median_income: 78000, population: 89000,  vacancy_rate: 0.042, walk_score: 38 }, meta: { County: 'Hennepin', Founded: '1953' } },
+          { id: 'plymouth',      label: 'Plymouth',      geojson: makeBox(-93.456, 44.999, 0.052), kpis: { median_income: 91000, population: 82000,  vacancy_rate: 0.031, walk_score: 29 }, meta: { County: 'Hennepin', Founded: '1955' } },
+          { id: 'eden-prairie',  label: 'Eden Prairie',  geojson: makeBox(-93.471, 44.854, 0.052), kpis: { median_income: 96000, population: 64000,  vacancy_rate: 0.028, walk_score: 33 }, meta: { County: 'Hennepin', Founded: '1974' } },
+          { id: 'eagan',         label: 'Eagan',         geojson: makeBox(-93.167, 44.804, 0.050), kpis: { median_income: 83000, population: 68000,  vacancy_rate: 0.037, walk_score: 31 }, meta: { County: 'Dakota',   Founded: '1974' } },
+          { id: 'maple-grove',   label: 'Maple Grove',   geojson: makeBox(-93.456, 45.073, 0.050), kpis: { median_income: 98000, population: 71000,  vacancy_rate: 0.025, walk_score: 24 }, meta: { County: 'Hennepin', Founded: '1975' } },
+          { id: 'brooklyn-park', label: 'Brooklyn Park', geojson: makeBox(-93.374, 45.094, 0.048), kpis: { median_income: 67000, population: 79000,  vacancy_rate: 0.055, walk_score: 41 }, meta: { County: 'Hennepin', Founded: '1969' } },
+        ],
+      },
+    })
+
+    app.on('featureSelect', (e) => {
+      console.log('Selected:', e.featureId, e.properties)
+    })
+  </script>
+</body>
+</html>

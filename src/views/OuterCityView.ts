@@ -52,10 +52,14 @@ export class OuterCityView {
     this.root.style.flexDirection = 'column'
     applyThemeToDom(this.root, this.theme)
 
-    // KPI selector bar at top
-    this.kpiSelectorEl = document.createElement('div')
-    this.kpiSelectorEl.className = 'lv-kpi-selector'
-    this.root.appendChild(this.kpiSelectorEl)
+    // KPI selector: render into external header when provided, otherwise own bar
+    if (options.headerEl) {
+      this.kpiSelectorEl = options.headerEl
+    } else {
+      this.kpiSelectorEl = document.createElement('div')
+      this.kpiSelectorEl.className = 'lv-kpi-selector'
+      this.root.appendChild(this.kpiSelectorEl)
+    }
 
     // Body row (map + panel)
     const body = document.createElement('div')

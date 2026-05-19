@@ -1,9 +1,12 @@
 export { InnerCityView } from './views/InnerCityView'
 export { OuterCityView } from './views/OuterCityView'
+export { LocalVisionApp } from './views/LocalVisionApp'
 
 export type {
   InnerCityOptions,
   OuterCityOptions,
+  LocalVisionAppOptions,
+  ViewMode,
   CommunityRecord,
   KpiSeries,
   KpiDataPoint,
