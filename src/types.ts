@@ -131,6 +131,13 @@ export interface OuterCityOptions {
 
 export type ViewMode = 'inner' | 'outer'
 
+export interface BoundaryContext {
+  /** State FIPS, abbreviation, or full name (e.g. '27', 'MN', 'Minnesota') */
+  stateFips: string
+  /** Optional county FIPS filter for tract/block-group fetches */
+  countyFips?: string
+}
+
 export interface LocalVisionAppOptions {
   container: string | HTMLElement
   defaultView?: ViewMode
@@ -138,6 +145,11 @@ export interface LocalVisionAppOptions {
   defaultInnerBoundary?: InnerLevel
   /** Starting boundary level for outer city view (default: 'county') */
   defaultOuterBoundary?: OuterLevel
+  /**
+   * When set, the app auto-fetches Census boundaries for this state whenever
+   * the boundary dropdown changes, and overlays them on the active map.
+   */
+  boundaryContext?: BoundaryContext
   /** Options for InnerCityView (container is managed internally) */
   inner: Omit<InnerCityOptions, 'container'>
   /** Options for OuterCityView (container is managed internally) */

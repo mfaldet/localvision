@@ -3,9 +3,11 @@ import type {
   ViewMode,
   LocalVisionEventMap,
   BoundaryChangeEvent,
+  GeoJsonFeatureCollection,
 } from '../types'
 import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
+import { BoundaryLoader } from '../geo/loader'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
 import { OuterCityView } from './OuterCityView'
@@ -38,6 +40,7 @@ export class LocalVisionApp {
   private innerView: InnerCityView | null = null
   private outerView: OuterCityView | null = null
   private options: LocalVisionAppOptions
+  private geoLoader: BoundaryLoader
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
@@ -47,6 +50,7 @@ export class LocalVisionApp {
     this.activeView = options.defaultView ?? 'outer'
     this.innerBoundary = options.defaultInnerBoundary ?? 'tract'
     this.outerBoundary = options.defaultOuterBoundary ?? 'county'
+    this.geoLoader = new BoundaryLoader({ sessionCache: true })
 
     const theme = resolveTheme(options.theme)
 
@@ -175,13 +179,13 @@ export class LocalVisionApp {
 
     sel.addEventListener('change', () => {
       const boundary = sel.value as OuterLevel | InnerLevel
-      // Update saved state immediately so switchTo() doesn't overwrite it
       if (this.activeView === 'inner') {
         this.innerBoundary = boundary as InnerLevel
       } else {
         this.outerBoundary = boundary as OuterLevel
       }
       this.emit('boundaryChange', { boundary, view: this.activeView })
+      void this.fetchAndApplyBoundary(boundary, this.activeView)
     })
 
     return sel
@@ -241,6 +245,12 @@ export class LocalVisionApp {
       })
       this.forwardListeners(this.outerView)
     }
+
+    // Auto-load boundary overlay if a context is configured
+    if (this.options.boundaryContext) {
+      const level = view === 'inner' ? this.innerBoundary : this.outerBoundary
+      void this.fetchAndApplyBoundary(level, view)
+    }
   }
 
   private destroyActiveView(): void {
@@ -258,6 +268,33 @@ export class LocalVisionApp {
       const handlers = this.listeners[k] as ((e: never) => void)[] | undefined
       handlers?.forEach((h) => view.on(k, h as never))
     })
+  }
+
+  private async fetchAndApplyBoundary(
+    level: OuterLevel | InnerLevel,
+    view: ViewMode,
+  ): Promise<void> {
+    const ctx = this.options.boundaryContext
+    if (!ctx) return
+
+    this.boundarySelectEl.disabled = true
+    this.boundarySelectEl.style.opacity = '0.5'
+
+    let geojson: GeoJsonFeatureCollection
+    try {
+      if (view === 'outer') {
+        geojson = await this.geoLoader.outerLevel(level as OuterLevel, ctx.stateFips)
+      } else {
+        geojson = await this.geoLoader.innerLevel(level as InnerLevel, ctx.stateFips, ctx.countyFips)
+      }
+      this.innerView?.setBoundaryLayer(geojson)
+      this.outerView?.setBoundaryLayer(geojson)
+    } catch (err) {
+      console.error('[LocalVision] Boundary fetch failed:', err)
+    } finally {
+      this.boundarySelectEl.disabled = false
+      this.boundarySelectEl.style.opacity = ''
+    }
   }
 
   private emit<K extends keyof LocalVisionEventMap>(event: K, payload: LocalVisionEventMap[K]): void {

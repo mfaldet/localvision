@@ -36,6 +36,9 @@
     const app = new LocalVisionApp({
       container: '#app',
       defaultView: 'outer',
+      defaultInnerBoundary: 'tract',
+      defaultOuterBoundary: 'county',
+      boundaryContext: { stateFips: '27' }, // Minnesota
 
       inner: {
         boundary: {

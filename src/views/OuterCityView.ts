@@ -132,6 +132,38 @@ export class OuterCityView {
     this.renderPanel()
   }
 
+  /**
+   * Add or replace a boundary overlay layer on the map.
+   * Draws on top of the choropleth. Pass null to clear.
+   */
+  setBoundaryLayer(geojson: import('../types').GeoJsonFeatureCollection | null): void {
+    const apply = () => {
+      const SOURCE = 'lv-overlay'
+      const LINE   = 'lv-overlay-line'
+
+      if (!geojson) {
+        if (this.map.getLayer(LINE))    this.map.removeLayer(LINE)
+        if (this.map.getSource(SOURCE)) this.map.removeSource(SOURCE)
+        return
+      }
+
+      if (this.map.getSource(SOURCE)) {
+        (this.map.getSource(SOURCE) as maplibregl.GeoJSONSource)
+          .setData(geojson as GeoJSON.FeatureCollection)
+      } else {
+        this.map.addSource(SOURCE, { type: 'geojson', data: geojson as GeoJSON.FeatureCollection })
+        // Outer view: lines only so choropleth colors still read clearly
+        this.map.addLayer({
+          id: LINE, type: 'line', source: SOURCE,
+          paint: { 'line-color': '#ffffff', 'line-width': 1, 'line-opacity': 0.4 },
+        })
+      }
+    }
+
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
   destroy(): void {
     this.resizeObserver.disconnect()
     this.map.remove()

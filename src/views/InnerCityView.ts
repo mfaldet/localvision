@@ -112,6 +112,43 @@ export class InnerCityView {
     this.renderPanel()
   }
 
+  /**
+   * Add or replace a boundary overlay layer on the map.
+   * Pass null to clear the overlay.
+   */
+  setBoundaryLayer(geojson: import('../types').GeoJsonFeatureCollection | null): void {
+    const apply = () => {
+      const SOURCE = 'lv-overlay'
+      const FILL   = 'lv-overlay-fill'
+      const LINE   = 'lv-overlay-line'
+
+      if (!geojson) {
+        if (this.map.getLayer(LINE))   this.map.removeLayer(LINE)
+        if (this.map.getLayer(FILL))   this.map.removeLayer(FILL)
+        if (this.map.getSource(SOURCE)) this.map.removeSource(SOURCE)
+        return
+      }
+
+      if (this.map.getSource(SOURCE)) {
+        (this.map.getSource(SOURCE) as maplibregl.GeoJSONSource)
+          .setData(geojson as GeoJSON.FeatureCollection)
+      } else {
+        this.map.addSource(SOURCE, { type: 'geojson', data: geojson as GeoJSON.FeatureCollection })
+        this.map.addLayer({
+          id: FILL, type: 'fill', source: SOURCE,
+          paint: { 'fill-color': this.theme.colorAccent, 'fill-opacity': 0.07 },
+        })
+        this.map.addLayer({
+          id: LINE, type: 'line', source: SOURCE,
+          paint: { 'line-color': this.theme.colorAccent, 'line-width': 1, 'line-opacity': 0.65 },
+        })
+      }
+    }
+
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
   destroy(): void {
     this.resizeObserver.disconnect()
     this.map.remove()

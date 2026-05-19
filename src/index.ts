@@ -6,6 +6,7 @@ export type {
   InnerCityOptions,
   OuterCityOptions,
   LocalVisionAppOptions,
+  BoundaryContext,
   ViewMode,
   CommunityRecord,
   KpiSeries,
