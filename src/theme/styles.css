@@ -405,3 +405,65 @@
 
 @keyframes lv-spin { to { transform: rotate(360deg); } }
 @keyframes lv-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Distribution cards (multi-KPI comparison view) ─────────────────────── */
+
+.lv-distribution-card {
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, border-left-color 0.12s ease;
+  border-left: 3px solid transparent;
+}
+
+.lv-distribution-card:hover {
+  background: var(--lv-color-surface-elevated);
+  border-left-color: var(--lv-color-primary);
+}
+
+.lv-distribution-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.lv-distribution-header .lv-chart-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lv-distribution-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 10px;
+  color: var(--lv-color-text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.lv-distribution-stats b {
+  color: var(--lv-color-text);
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+.lv-distribution-selected {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--lv-color-text-muted);
+  background: var(--lv-color-bg);
+  border-radius: 4px;
+  border-left: 2px solid var(--lv-color-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.lv-distribution-selected b {
+  color: var(--lv-color-text);
+  font-weight: 600;
+}

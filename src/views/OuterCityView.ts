@@ -505,10 +505,22 @@ export class OuterCityView {
   }
 
   private renderComparisonCharts(width: number): void {
-    const kpiDef = this.kpiDefs.get(this.activeKpi)
-    if (!kpiDef) return
+    const activeKpi = this.kpiDefs.get(this.activeKpi)
+    if (!activeKpi) return
 
-    // Ranked bar chart of all communities for active KPI
+    // 1. Big ranked bar chart for the active KPI.
+    this.renderRankedBarCard(activeKpi, width)
+
+    // 2. Compact distribution card for every other KPI.
+    this.kpiDefs.forEach((def) => {
+      if (def.id !== this.activeKpi) {
+        this.renderDistributionCard(def, width)
+      }
+    })
+  }
+
+  /** Big ranked-bar card. Bidirectional cross-filter: clicking a bar selects. */
+  private renderRankedBarCard(kpiDef: KpiDefinition, width: number): void {
     const card = document.createElement('div')
     card.className = 'lv-chart-card'
 
@@ -524,11 +536,11 @@ export class OuterCityView {
 
     const selectedIds = this.selection.getSnapshot().selected
     const data = [...this.communities]
-      .sort((a, b) => (b.kpis[this.activeKpi] ?? 0) - (a.kpis[this.activeKpi] ?? 0))
+      .sort((a, b) => (b.kpis[kpiDef.id] ?? 0) - (a.kpis[kpiDef.id] ?? 0))
       .map((c) => ({
         id: c.id,
         label: c.label,
-        value: c.kpis[this.activeKpi] ?? 0,
+        value: c.kpis[kpiDef.id] ?? 0,
         selected: selectedIds.has(c.id),
       }))
 
@@ -575,12 +587,10 @@ export class OuterCityView {
 
     chartEl.appendChild(plot)
 
-    // Bidirectional: click a bar → dispatch selection
-    // Plot renders one <rect> per data row in chart order. The data array is
-    // sorted descending, so index i matches data[i].
+    // Bidirectional click → selection. Plot renders one <rect> per row in
+    // sorted order, so the index matches data[i].
     const rects = plot.querySelectorAll('rect[fill]')
     const dataRects = Array.from(rects).filter((r) => {
-      // skip background/grid rects; data rects have an x attribute > 0
       const x = parseFloat(r.getAttribute('x') ?? '0')
       return x > 0 || r.getAttribute('width') !== '0'
     })
@@ -590,12 +600,123 @@ export class OuterCityView {
         ;(rect as SVGElement).style.cursor = 'pointer'
         rect.addEventListener('click', (e) => {
           e.stopPropagation()
-          // Toggle: clicking the already-selected bar clears
           if (datum.selected) this.selection.clear()
           else this.selection.selectFeatures([datum.id], 'replace')
         })
       })
     }
+  }
+
+  /**
+   * Compact distribution card for a non-active KPI: title, min/median/max
+   * stats row, mini histogram, and (if a feature is selected) a marker line
+   * at the selected feature's value. Click the card to make this KPI active.
+   */
+  private renderDistributionCard(def: KpiDefinition, width: number): void {
+    const card = document.createElement('div')
+    card.className = 'lv-chart-card lv-distribution-card'
+    card.title = `Click to make "${def.label}" the active KPI`
+    card.addEventListener('click', () => this.setActiveKpi(def.id))
+
+    // Gather + summarize values
+    const values = this.communities
+      .map((c) => c.kpis[def.id])
+      .filter((v): v is number => typeof v === 'number' && isFinite(v))
+
+    const sorted = [...values].sort((a, b) => a - b)
+    const min = sorted[0] ?? 0
+    const max = sorted[sorted.length - 1] ?? 0
+    const med = sorted[Math.floor(sorted.length / 2)] ?? 0
+
+    // Resolve a single-select for the marker
+    const selectedIds = this.selection.getSnapshot().selected
+    const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null
+    const selectedCommunity = selectedId
+      ? this.communities.find((c) => c.id === selectedId)
+      : null
+    const selectedValue = selectedCommunity?.kpis[def.id]
+    const selectedValid = typeof selectedValue === 'number' && isFinite(selectedValue)
+
+    // ── Header: title + stats ──────────────────────────────────────────────
+    const header = document.createElement('div')
+    header.className = 'lv-distribution-header'
+
+    const title = document.createElement('p')
+    title.className = 'lv-chart-title'
+    title.textContent = def.label
+    header.appendChild(title)
+
+    const stats = document.createElement('div')
+    stats.className = 'lv-distribution-stats'
+    stats.innerHTML = `
+      <span>min <b>${formatKpiValue(min, def)}</b></span>
+      <span>med <b>${formatKpiValue(med, def)}</b></span>
+      <span>max <b>${formatKpiValue(max, def)}</b></span>
+    `
+    header.appendChild(stats)
+    card.appendChild(header)
+
+    // ── Histogram ──────────────────────────────────────────────────────────
+    const chartEl = document.createElement('div')
+    chartEl.className = 'lv-chart-container'
+
+    if (values.length > 0) {
+      const marks: Plot.Markish[] = [
+        Plot.rectY(
+          values,
+          Plot.binX(
+            { y: 'count' },
+            { x: (v: number) => v, fill: this.theme.colorPrimary, fillOpacity: 0.55 },
+          ),
+        ),
+        Plot.ruleY([0], { stroke: this.theme.colorBorder, strokeOpacity: 0.5 }),
+      ]
+      if (selectedValid) {
+        marks.push(
+          Plot.ruleX([selectedValue as number], {
+            stroke: this.theme.colorAccent,
+            strokeWidth: 2,
+          }),
+        )
+      }
+
+      const plot = Plot.plot({
+        width: width - 48,
+        height: 78,
+        marginLeft: 8,
+        marginRight: 8,
+        marginTop: 6,
+        marginBottom: 22,
+        style: {
+          background: 'transparent',
+          color: this.theme.colorTextMuted,
+          fontFamily: this.theme.fontFamily,
+          fontSize: '10px',
+          overflow: 'visible',
+        },
+        x: {
+          tickSize: 0,
+          tickPadding: 6,
+          line: false,
+          tickFormat: (d: number) => formatKpiValue(d, def),
+        },
+        y: { axis: null },
+        marks,
+      })
+
+      chartEl.appendChild(plot)
+    }
+    card.appendChild(chartEl)
+
+    // ── Selected feature indicator ─────────────────────────────────────────
+    if (selectedCommunity && selectedValid) {
+      const indicator = document.createElement('p')
+      indicator.className = 'lv-distribution-selected'
+      indicator.innerHTML = `<b>${selectedCommunity.label}</b> · ${formatKpiValue(selectedValue as number, def)}`
+      card.appendChild(indicator)
+    }
+
+    this.panelEl.appendChild(card)
   }
 
   private buildTooltip(): HTMLElement {
