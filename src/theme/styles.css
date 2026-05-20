@@ -570,3 +570,112 @@
   text-align: right;
   font-size: 12px;
 }
+
+/* ── City search (header far-left) ──────────────────────────────────────── */
+
+.lv-city-search {
+  position: relative;
+  flex-shrink: 0;
+  min-width: 220px;
+}
+
+.lv-city-search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--lv-color-bg);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  color: var(--lv-color-text);
+  font-family: var(--lv-font);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.lv-city-search-input::placeholder { color: var(--lv-color-text-muted); }
+.lv-city-search-input:hover  { border-color: var(--lv-color-primary); }
+.lv-city-search-input:focus  { border-color: var(--lv-color-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--lv-color-primary) 20%, transparent); }
+.lv-city-search-input:disabled { color: var(--lv-color-text-muted); cursor: wait; }
+
+.lv-city-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--lv-color-surface-elevated);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.lv-city-search-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--lv-color-text);
+  font-family: var(--lv-font);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.lv-city-search-option:hover { background: var(--lv-color-surface); }
+.lv-city-search-option strong { font-weight: 600; }
+.lv-city-search-option span { color: var(--lv-color-text-muted); font-size: 11px; margin-left: 12px; }
+
+.lv-city-search-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--lv-color-text-muted);
+  font-style: italic;
+}
+
+/* ── Empty state (no city picked) ───────────────────────────────────────── */
+
+.lv-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.lv-empty-state-card {
+  text-align: center;
+  max-width: 360px;
+  color: var(--lv-color-text-muted);
+}
+
+.lv-empty-state-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--lv-color-text);
+}
+
+.lv-empty-state-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* "+ View" affordance for views that aren't loaded yet */
+.lv-view-toggle-load {
+  border: 1px dashed var(--lv-color-border) !important;
+  color: var(--lv-color-text-muted) !important;
+}
+.lv-view-toggle-load:hover {
+  border-color: var(--lv-color-primary) !important;
+  color: var(--lv-color-text) !important;
+}

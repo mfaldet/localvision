@@ -177,9 +177,17 @@ export interface LocalVisionAppOptions {
    * the boundary dropdown changes, and overlays them on the active map.
    */
   boundaryContext?: BoundaryContext
-  /** Options for InnerCityView (container is managed internally) */
-  inner: Omit<InnerCityOptions, 'container'>
-  /** Options for OuterCityView (container is managed internally) */
+  /**
+   * Options for InnerCityView. Optional in city-first mode (with
+   * `drillProvider`) — the Inner view becomes a finer-scope OuterCityView
+   * once the user clicks "+ Inner City" and triggers its first fetch.
+   */
+  inner?: Omit<InnerCityOptions, 'container'>
+  /**
+   * Options for OuterCityView. `binding` and `communities` are optional in
+   * city-first mode — they get supplied via `drillProvider` after the user
+   * picks a city.
+   */
   outer: Omit<OuterCityOptions, 'container' | 'headerEl'>
   theme?: ThemeOverrides
   /**

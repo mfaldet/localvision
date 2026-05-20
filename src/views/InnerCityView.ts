@@ -149,6 +149,58 @@ export class InnerCityView {
     else this.map.once('load', apply)
   }
 
+  /**
+   * Add or replace a "city focus" overlay — the chosen city's polygon as a
+   * bold red outline drawn on top of everything. Pass null to clear.
+   */
+  setCityFocus(feature: import('../types').GeoJsonFeature | null): void {
+    const apply = () => {
+      const SOURCE = 'lv-city-focus'
+      const FILL   = 'lv-city-focus-fill'
+      const LINE   = 'lv-city-focus-line'
+      const HALO   = 'lv-city-focus-halo'
+
+      if (!feature) {
+        if (this.map.getLayer(LINE))   this.map.removeLayer(LINE)
+        if (this.map.getLayer(HALO))   this.map.removeLayer(HALO)
+        if (this.map.getLayer(FILL))   this.map.removeLayer(FILL)
+        if (this.map.getSource(SOURCE)) this.map.removeSource(SOURCE)
+        return
+      }
+
+      const fc: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: [feature as unknown as GeoJSON.Feature],
+      }
+
+      if (this.map.getSource(SOURCE)) {
+        ;(this.map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(fc)
+      } else {
+        this.map.addSource(SOURCE, { type: 'geojson', data: fc })
+        this.map.addLayer({
+          id: FILL,
+          type: 'fill',
+          source: SOURCE,
+          paint: { 'fill-color': '#FF3B30', 'fill-opacity': 0.05 },
+        })
+        this.map.addLayer({
+          id: HALO,
+          type: 'line',
+          source: SOURCE,
+          paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.4, 'line-blur': 1 },
+        })
+        this.map.addLayer({
+          id: LINE,
+          type: 'line',
+          source: SOURCE,
+          paint: { 'line-color': '#FF3B30', 'line-width': 3, 'line-opacity': 0.95 },
+        })
+      }
+    }
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
   destroy(): void {
     this.resizeObserver.disconnect()
     this.map.remove()

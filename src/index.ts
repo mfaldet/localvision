@@ -32,7 +32,7 @@ export { DEFAULT_THEME } from './theme/tokens'
 export type { ResolvedTheme } from './theme/tokens'
 
 export { BoundaryLoader, LEVEL_META, STATES, resolveStateFips, padCountyFips, getStateMeta } from './geo/index'
-export type { BoundaryLoaderOptions, CacheStats, OuterLevel, InnerLevel, AnyLevel, LevelMeta, StateMeta } from './geo/index'
+export type { BoundaryLoaderOptions, CacheStats, PlaceIndexEntry, OuterLevel, InnerLevel, AnyLevel, LevelMeta, StateMeta } from './geo/index'
 
 // ─── Cross-filtering (Bundle 2) ──────────────────────────────────────────────
 export { SelectionStore } from './state/selection'

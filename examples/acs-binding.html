@@ -85,9 +85,8 @@
         sessionCache: true,
       })
 
-      // 1. Fetch county boundaries + ACS data in parallel
-      setLoading('Fetching MN county boundaries and ACS data in parallel…')
-      // The set of ACS variables we fetch at every drill level.
+      // ACS variables fetched at every drill level (BYO metric — these are
+      // just demo data; the library itself doesn't bake in ACS).
       const VARIABLES = [
         'median_household_income',
         'total_population',
@@ -95,37 +94,23 @@
         'median_home_value',
         'per_capita_income',
       ]
-      // ACS 5-year vintages to animate through
+      // ACS 5-year vintages — drives the time slider
       const YEARS = [2018, 2019, 2020, 2021, 2022]
 
-      setLoading(`Fetching MN county boundaries and ${YEARS.length} years of ACS data…`)
-      const [boundaries, table] = await Promise.all([
-        loader.counties('27'),
-        acs.fetchTemporal({
-          variables: VARIABLES,
-          geography: { state: '27', level: 'county' },
-          years: YEARS,
-        }),
-      ])
+      hideLoading()
 
-      // 2. Join them by GEOID (binding holds rows for all years; view filters per current time)
-      setLoading('Binding data to boundaries…')
-      const binding = bindDataToBoundaries(boundaries, table)
-
-      // 3. Render
+      // City-first mode: no initial binding. The app starts blank with just
+      // a city-search box. After the user picks a city, drillProvider fires
+      // for the default level (State) and the view boots up.
       const app = new LocalVisionApp({
         container: '#app',
         defaultView: 'outer',
-        defaultOuterBoundary: 'county',
-        boundaryContext: { stateFips: '27' },
-        // Drill / level-swap provider. Called by:
-        //  1. The drill button: county → tract → bg (deeper)
-        //  2. The boundary dropdown: county ↔ place ↔ cousub (sibling swaps)
+        defaultOuterBoundary: 'state',  // start zoomed-out
+        defaultInnerBoundary: 'tract',
         drillProvider: async ({ level, parent, context }) => {
           console.log(`[drill] → ${level} for ${parent.label}`)
           const stateFips = context.stateFips ?? '27'
 
-          // Boundaries — pick the right fetch for this level
           let boundariesPromise
           switch (level) {
             case 'state':  boundariesPromise = loader.states(); break
@@ -139,82 +124,27 @@
               return null
           }
 
-          // ACS data — same variables, all vintages, so the time slider
-          // keeps working after drilling
+          const geoForAcs = level === 'state'
+            ? { state: '*', level }  // nation-wide for the state-level choropleth
+            : { state: stateFips, level, county: context.countyFips }
+
           const tablePromise = acs.fetchTemporal({
             variables: VARIABLES,
-            geography: { state: stateFips, level, county: context.countyFips },
+            geography: geoForAcs,
             years: YEARS,
           })
 
           const [b, t] = await Promise.all([boundariesPromise, tablePromise])
           return bindDataToBoundaries(b, t)
         },
-        rootDrilldownLevel: {
-          id: 'root',
-          label: 'Minnesota Counties',
-          level: 'county',
-          context: { stateFips: '27' },
-        },
-        outer: {
-          binding,
-          activeKpi: 'median_household_income',
-          map: { center: [-94.5, 46.3], zoom: 6 },
-        },
-        // Inner view kept stub-minimal — Bundle 4 (Time) is where it gets real
-        inner: {
-          boundary: {
-            type: 'FeatureCollection',
-            features: [{
-              type: 'Feature',
-              geometry: {
-                type: 'Polygon',
-                coordinates: [[
-                  [-93.3060, 44.9550], [-93.2850, 44.9550],
-                  [-93.2850, 44.9420], [-93.3060, 44.9420],
-                  [-93.3060, 44.9550],
-                ]],
-              },
-              properties: { name: 'Uptown, Minneapolis' },
-            }],
-          },
-          map: { center: [-93.2955, 44.9485], zoom: 13 },
-          kpis: [{
-            id: 'placeholder',
-            label: 'Placeholder',
-            format: 'number',
-            data: [{ category: '2023', value: 1 }],
-          }],
-          charts: [{ type: 'bar', kpiId: 'placeholder', title: 'Inner view — ACS time-series coming in Bundle 4' }],
-        },
+        // Outer view stub — no initial binding (city-first); activeKpi just
+        // names the metric that should drive the choropleth on first paint.
+        outer: { activeKpi: 'median_household_income' },
       })
 
-      hideLoading()
-
-      // Bundle 2: cross-filter subscription. The store fires whenever any
-      // component (map click, bar chart click, "← All communities" button,
-      // or programmatic mutation) changes the selection.
       app.selectionStore.subscribe((state) => {
-        const ids = [...state.selected]
-        if (ids.length === 0) {
-          console.log('[selection] cleared')
-        } else {
-          const names = ids
-            .map((id) => binding.boundaries.features.find((f) => f.properties._lv_geoid === id))
-            .map((f) => f?.properties._lv_label ?? '?')
-          console.log(`[selection] ${names.join(', ')}`)
-        }
+        console.log('[selection]', [...state.selected])
       })
-
-      console.log(`✓ Loaded ${binding.boundaries.features.length} counties × ${table.variables.length} ACS variables`)
-      console.table(
-        binding.boundaries.features.slice(0, 5).map((f) => ({
-          name: f.properties._lv_label,
-          income: f.properties.median_household_income,
-          rent: f.properties.median_gross_rent,
-          pop: f.properties.total_population,
-        })),
-      )
     } catch (err) {
       console.error(err)
       const isKeyError = String(err.message).includes('key') || String(err.message).includes('400')

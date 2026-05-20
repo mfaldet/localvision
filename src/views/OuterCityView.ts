@@ -240,6 +240,71 @@ export class OuterCityView {
   }
 
   /**
+   * Add or replace a "city focus" overlay — the chosen city's polygon drawn
+   * as a bold red outline on top of everything. Always visible regardless
+   * of the active boundary level. Pass null to clear.
+   */
+  setCityFocus(feature: import('../types').GeoJsonFeature | null): void {
+    const apply = () => {
+      const SOURCE = 'lv-city-focus'
+      const FILL   = 'lv-city-focus-fill'
+      const LINE   = 'lv-city-focus-line'
+      const HALO   = 'lv-city-focus-halo'
+
+      if (!feature) {
+        if (this.map.getLayer(LINE))   this.map.removeLayer(LINE)
+        if (this.map.getLayer(HALO))   this.map.removeLayer(HALO)
+        if (this.map.getLayer(FILL))   this.map.removeLayer(FILL)
+        if (this.map.getSource(SOURCE)) this.map.removeSource(SOURCE)
+        return
+      }
+
+      const fc: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: [feature as unknown as GeoJSON.Feature],
+      }
+
+      if (this.map.getSource(SOURCE)) {
+        ;(this.map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(fc)
+      } else {
+        this.map.addSource(SOURCE, { type: 'geojson', data: fc })
+        // Subtle fill so the city's body is just slightly tinted
+        this.map.addLayer({
+          id: FILL,
+          type: 'fill',
+          source: SOURCE,
+          paint: { 'fill-color': '#FF3B30', 'fill-opacity': 0.08 },
+        })
+        // White halo underneath the red line for contrast over dark + light bases
+        this.map.addLayer({
+          id: HALO,
+          type: 'line',
+          source: SOURCE,
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 6,
+            'line-opacity': 0.45,
+            'line-blur': 1,
+          },
+        })
+        this.map.addLayer({
+          id: LINE,
+          type: 'line',
+          source: SOURCE,
+          paint: {
+            'line-color': '#FF3B30',
+            'line-width': 3,
+            'line-opacity': 0.95,
+          },
+        })
+      }
+    }
+
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
+  /**
    * Add or replace a boundary overlay layer on the map.
    * Draws on top of the choropleth. Pass null to clear.
    */

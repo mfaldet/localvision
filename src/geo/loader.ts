@@ -13,7 +13,7 @@
 
 import type { GeoJsonFeatureCollection, GeoJsonFeature } from '../types'
 import type { OuterLevel, InnerLevel } from './levels'
-import { resolveStateFips, padCountyFips } from './fips'
+import { resolveStateFips, padCountyFips, getStateMeta, STATES } from './fips'
 
 // ─── Source config ────────────────────────────────────────────────────────────
 
@@ -153,6 +153,19 @@ export interface BoundaryLoaderOptions {
   layerOverrides?: Partial<Record<string, number>>
 }
 
+/**
+ * Lightweight place metadata for the city autocomplete index — name +
+ * GEOID + state, no geometry. Geometry is fetched separately on demand.
+ */
+export interface PlaceIndexEntry {
+  geoid: string
+  name: string
+  stateFips: string
+  stateAbbr: string
+  /** "Name, ST" — convenient for display in dropdowns */
+  displayName: string
+}
+
 export interface CacheStats {
   /** Number of cache hits (memory + persisted layers combined). */
   hits: number
@@ -171,6 +184,8 @@ export interface CacheStats {
 export class BoundaryLoader {
   private memCache = new Map<string, GeoJsonFeatureCollection>()
   private inFlight = new Map<string, Promise<GeoJsonFeatureCollection>>()
+  private placesIdxCache = new Map<string, PlaceIndexEntry[]>()
+  private placesIdxInFlight = new Map<string, Promise<PlaceIndexEntry[]>>()
   private useSessionCache: boolean
   private idb: IDBCache | null
   private layers: Record<string, number>
@@ -217,6 +232,94 @@ export class BoundaryLoader {
    */
   places(stateFips: string): Promise<GeoJsonFeatureCollection> {
     return this.tigerwebQuery('place', stateFips)
+  }
+
+  /**
+   * Lightweight place index — names + GEOIDs only, no geometry. Fast enough
+   * to fetch for the entire nation (51 parallel state requests) and feed an
+   * autocomplete. Cached in memory; geometry can be fetched on demand later
+   * via places(stateFips).
+   *
+   * @param stateFips - state FIPS / abbr / name. When omitted, fetches all
+   *   50 states + DC in parallel and returns a flat concatenated index.
+   */
+  async placesIndex(stateFips?: string): Promise<PlaceIndexEntry[]> {
+    if (stateFips) {
+      const fips = resolveStateFips(stateFips)
+      return this.placesIndexForState(fips)
+    }
+    // Nation-wide: 50 states + DC (skip territories; ACS coverage is partial there)
+    const nationStates = STATES.filter((s) => parseInt(s.fips, 10) <= 56)
+    const all = await Promise.all(nationStates.map((s) => this.placesIndexForState(s.fips)))
+    return all.flat()
+  }
+
+  private async placesIndexForState(stateFips: string): Promise<PlaceIndexEntry[]> {
+    const cached = this.placesIdxCache.get(stateFips)
+    if (cached) return cached
+    const inFlight = this.placesIdxInFlight.get(stateFips)
+    if (inFlight) return inFlight
+
+    const promise = this.fetchPlacesIndexForState(stateFips)
+    this.placesIdxInFlight.set(stateFips, promise)
+    try {
+      const entries = await promise
+      this.placesIdxCache.set(stateFips, entries)
+      return entries
+    } finally {
+      this.placesIdxInFlight.delete(stateFips)
+    }
+  }
+
+  private async fetchPlacesIndexForState(stateFips: string): Promise<PlaceIndexEntry[]> {
+    const layerId = this.layers['place']
+    if (layerId === undefined) throw new Error(`[LocalVision] Unknown place layer`)
+    const stateMeta = getStateMeta(stateFips)
+    const abbr = stateMeta?.abbr ?? ''
+
+    const entries: PlaceIndexEntry[] = []
+    let offset = 0
+    while (true) {
+      const params = new URLSearchParams({
+        where: `STATE='${stateFips}'`,
+        outFields: 'NAME,GEOID,STATE',
+        returnGeometry: 'false',
+        f: 'geojson',
+        resultOffset: String(offset),
+        resultRecordCount: String(PAGE_SIZE),
+      })
+      const url = `${TIGERWEB_BASE}/${layerId}/query?${params.toString()}`
+      const res = await fetch(url)
+      if (!res.ok) {
+        throw new Error(
+          `[LocalVision] Places index fetch failed: HTTP ${res.status} (state ${stateFips})`,
+        )
+      }
+      const page = (await res.json()) as {
+        features?: { properties?: Record<string, unknown> }[]
+        error?: { message?: string }
+      }
+      if (page.error) {
+        throw new Error(`[LocalVision] TIGERweb error: ${page.error.message}`)
+      }
+      const feats = page.features ?? []
+      for (const f of feats) {
+        const name = String(f.properties?.['NAME'] ?? '')
+        const geoid = String(f.properties?.['GEOID'] ?? '')
+        if (name && geoid) {
+          entries.push({
+            geoid,
+            name,
+            stateFips,
+            stateAbbr: abbr,
+            displayName: abbr ? `${name}, ${abbr}` : name,
+          })
+        }
+      }
+      if (feats.length < PAGE_SIZE) break
+      offset += PAGE_SIZE
+    }
+    return entries
   }
 
   /**

@@ -7,8 +7,9 @@ import type {
 } from '../types'
 import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
-import { BoundaryLoader } from '../geo/loader'
+import { BoundaryLoader, type PlaceIndexEntry } from '../geo/loader'
 import { getStateMeta, resolveStateFips } from '../geo/fips'
+import type { GeoJsonFeature } from '../types'
 import { SelectionStore } from '../state/selection'
 import {
   DrilldownStore,
@@ -17,7 +18,7 @@ import {
   type DrilldownState,
   type DrillTarget,
 } from '../state/drilldown'
-import { TimeStore, type TimeState, type TimeValue } from '../state/time'
+import { TimeStore, type TimeState } from '../state/time'
 import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
@@ -70,6 +71,20 @@ export class LocalVisionApp {
   private fetchTimings = new Map<string, number[]>()
   /** What level / label we're currently loading toward, if anything. */
   private loadingTarget: { level: string; label: string } | null = null
+  /** City search UI + state */
+  private citySearchEl: HTMLInputElement
+  private citySearchDropdownEl: HTMLElement
+  private cityToggleContainerEl: HTMLElement
+  private emptyStateEl: HTMLElement
+  private selectedCity: PlaceIndexEntry | null = null
+  private selectedCityFeature: GeoJsonFeature | null = null
+  private placesIndex: PlaceIndexEntry[] = []
+  /** Views that have loaded data (and therefore appear in the toggle). */
+  private loadedViews = new Set<ViewMode>()
+  /** Cached bindings per view — used when (re-)mounting after a switch. */
+  private viewBindings = new Map<ViewMode, import('../data/types').DataBinding>()
+  /** Dedicated container for the active view's DOM (so body can also host overlays). */
+  private viewContainerEl: HTMLElement | null = null
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
@@ -100,21 +115,33 @@ export class LocalVisionApp {
     this.headerEl = document.createElement('div')
     this.headerEl.className = 'lv-app-header'
 
-    // 1. View toggle (far left)
-    this.headerEl.appendChild(this.buildToggle())
+    // 1. City search (far left) — entry point for the app
+    const { wrapEl, inputEl, dropdownEl } = this.buildCitySearch()
+    this.citySearchEl = inputEl
+    this.citySearchDropdownEl = dropdownEl
+    this.headerEl.appendChild(wrapEl)
 
-    // 2. Boundary dropdown (immediately right of toggle)
+    // 2. View toggle container (dynamic — populated as views load)
+    this.cityToggleContainerEl = document.createElement('div')
+    this.cityToggleContainerEl.className = 'lv-view-toggle'
+    this.cityToggleContainerEl.style.display = 'none'
+    this.headerEl.appendChild(this.cityToggleContainerEl)
+
+    // 3. Boundary dropdown
     this.boundarySelectEl = this.buildBoundarySelect()
+    this.boundarySelectEl.style.display = 'none'
     this.headerEl.appendChild(this.boundarySelectEl)
 
-    // 3. Divider — separates the toggle+boundary group from KPI pills
+    // 4. Divider — separates the toggle+boundary group from KPI pills
     this.dividerEl = document.createElement('div')
     this.dividerEl.className = 'lv-header-divider'
+    this.dividerEl.style.display = 'none'
     this.headerEl.appendChild(this.dividerEl)
 
-    // 4. KPI slot — OuterCityView renders its pills here
+    // 5. KPI slot — OuterCityView renders its pills here
     this.kpiSlotEl = document.createElement('div')
     this.kpiSlotEl.className = 'lv-kpi-selector'
+    this.kpiSlotEl.style.display = 'none'
     this.headerEl.appendChild(this.kpiSlotEl)
 
     this.root.appendChild(this.headerEl)
@@ -208,10 +235,46 @@ export class LocalVisionApp {
       this.updateLoadingOverlay(state.loading, label, estimate)
     })
 
-    // Render initial state
-    this.syncHeaderForView(this.activeView)
-    this.mountView(this.activeView)
-    this.initializeDrilldownRoot()
+    // Empty-state placeholder for the body — shown until a city is picked.
+    this.emptyStateEl = document.createElement('div')
+    this.emptyStateEl.className = 'lv-empty-state'
+    this.emptyStateEl.innerHTML = `
+      <div class="lv-empty-state-card">
+        <h2>Pick a city to begin</h2>
+        <p>Type the name of any US incorporated place in the search box at the top-left.</p>
+      </div>
+    `
+    this.bodyEl.appendChild(this.emptyStateEl)
+
+    // City-first mode is engaged when a drillProvider is configured but no
+    // initial outer.binding was supplied. Back-compat path: if outer.binding
+    // IS provided, mount immediately like before.
+    const hasInitialBinding = !!(this.options.outer as { binding?: unknown }).binding
+    if (hasInitialBinding) {
+      this.emptyStateEl.style.display = 'none'
+      this.cityToggleContainerEl.style.display = ''
+      this.boundarySelectEl.style.display = ''
+      this.loadedViews.add(this.activeView)
+      this.renderViewToggle()
+      this.syncHeaderForView(this.activeView)
+      this.mountView(this.activeView)
+      this.initializeDrilldownRoot()
+    } else {
+      // City-first: prefetch the nation-wide places index in the background
+      // so the autocomplete is ready by the time the user starts typing.
+      this.citySearchEl.placeholder = 'Loading US cities…'
+      void this.geoLoader
+        .placesIndex()
+        .then((entries) => {
+          this.placesIndex = entries
+          this.citySearchEl.placeholder = 'Pick a city (e.g. Rosemount, MN)'
+          this.citySearchEl.disabled = false
+        })
+        .catch((err) => {
+          console.error('[LocalVision] Failed to load US places index:', err)
+          this.citySearchEl.placeholder = 'City search unavailable'
+        })
+    }
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -440,54 +503,266 @@ export class LocalVisionApp {
     }
   }
 
-  private buildToggle(): HTMLElement {
-    const wrap = document.createElement('div')
-    wrap.className = 'lv-view-toggle'
+  /**
+   * Render the view toggle from the current `loadedViews` set. A view that
+   * isn't loaded yet appears as an "+ Outer/Inner City" affordance instead
+   * of a toggle button — clicking it triggers its first data fetch and
+   * activates it. Order is fixed: Outer first, then Inner.
+   */
+  private renderViewToggle(): void {
+    this.cityToggleContainerEl.innerHTML = ''
 
     const modes: { id: ViewMode; label: string }[] = [
-      { id: 'inner', label: 'Inner City' },
       { id: 'outer', label: 'Outer City' },
+      { id: 'inner', label: 'Inner City' },
     ]
 
-    modes.forEach(({ id, label }) => {
+    for (const { id, label } of modes) {
+      const loaded = this.loadedViews.has(id)
       const btn = document.createElement('button')
-      btn.className = 'lv-view-toggle-btn'
-      btn.classList.toggle('lv-active', id === this.activeView)
       btn.dataset['view'] = id
-      btn.textContent = label
-      btn.addEventListener('click', () => this.switchTo(id))
-      wrap.appendChild(btn)
-    })
 
-    return wrap
+      if (loaded) {
+        btn.className = 'lv-view-toggle-btn'
+        btn.classList.toggle('lv-active', id === this.activeView)
+        btn.textContent = label
+        btn.addEventListener('click', () => this.switchTo(id))
+      } else {
+        btn.className = 'lv-view-toggle-btn lv-view-toggle-load'
+        btn.textContent = `+ ${label}`
+        btn.title = `Load ${label} data`
+        btn.addEventListener('click', () => this.loadView(id))
+      }
+      this.cityToggleContainerEl.appendChild(btn)
+    }
   }
 
   private updateToggleUI(): void {
-    this.headerEl.querySelectorAll<HTMLButtonElement>('.lv-view-toggle-btn').forEach((btn) => {
+    this.cityToggleContainerEl.querySelectorAll<HTMLButtonElement>('.lv-view-toggle-btn').forEach((btn) => {
       btn.classList.toggle('lv-active', btn.dataset['view'] === this.activeView)
     })
+  }
+
+  // ── Private — city search ─────────────────────────────────────────────────
+
+  /** Build the city search input + dropdown UI. */
+  private buildCitySearch(): {
+    wrapEl: HTMLElement
+    inputEl: HTMLInputElement
+    dropdownEl: HTMLElement
+  } {
+    const wrap = document.createElement('div')
+    wrap.className = 'lv-city-search'
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'lv-city-search-input'
+    input.placeholder = 'Loading US cities…'
+    input.disabled = true
+    input.autocomplete = 'off'
+
+    const dropdown = document.createElement('div')
+    dropdown.className = 'lv-city-search-dropdown'
+    dropdown.style.display = 'none'
+
+    wrap.appendChild(input)
+    wrap.appendChild(dropdown)
+
+    input.addEventListener('input', () => this.renderCityMatches(input.value, dropdown))
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length > 0) this.renderCityMatches(input.value, dropdown)
+    })
+    input.addEventListener('blur', () => {
+      // Delay so click on dropdown registers first
+      setTimeout(() => { dropdown.style.display = 'none' }, 150)
+    })
+
+    return { wrapEl: wrap, inputEl: input, dropdownEl: dropdown }
+  }
+
+  private renderCityMatches(query: string, dropdown: HTMLElement): void {
+    const q = query.trim().toLowerCase()
+    dropdown.innerHTML = ''
+    if (q.length < 2 || this.placesIndex.length === 0) {
+      dropdown.style.display = 'none'
+      return
+    }
+
+    // Score: name startsWith > name includes; cap at 25 results
+    const startsWith: PlaceIndexEntry[] = []
+    const includes: PlaceIndexEntry[] = []
+    for (const p of this.placesIndex) {
+      const nameLower = p.name.toLowerCase()
+      if (nameLower.startsWith(q)) startsWith.push(p)
+      else if (nameLower.includes(q)) includes.push(p)
+      if (startsWith.length >= 25) break
+    }
+    const matches = [...startsWith, ...includes].slice(0, 25)
+
+    if (matches.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'lv-city-search-empty'
+      empty.textContent = 'No matches.'
+      dropdown.appendChild(empty)
+    } else {
+      matches.forEach((p) => {
+        const opt = document.createElement('button')
+        opt.className = 'lv-city-search-option'
+        opt.type = 'button'
+        opt.innerHTML = `<strong>${p.name}</strong><span>${p.stateAbbr}</span>`
+        opt.addEventListener('mousedown', (e) => {
+          e.preventDefault() // prevent input blur before click
+          void this.selectCity(p)
+        })
+        dropdown.appendChild(opt)
+      })
+    }
+    dropdown.style.display = ''
+  }
+
+  /**
+   * Handler for picking a city from the autocomplete. Fetches the city's
+   * polygon, then triggers the initial Outer City load.
+   */
+  private async selectCity(city: PlaceIndexEntry): Promise<void> {
+    this.selectedCity = city
+    this.citySearchEl.value = city.displayName
+    this.citySearchDropdownEl.style.display = 'none'
+
+    // Hide empty state, reveal controls
+    this.emptyStateEl.style.display = 'none'
+    this.cityToggleContainerEl.style.display = ''
+    this.boundarySelectEl.style.display = ''
+
+    // Reset state for the new city
+    this.loadedViews.clear()
+    this.activeView = 'outer'
+    this.outerBoundary = this.options.defaultOuterBoundary ?? 'state'
+    this.innerBoundary = this.options.defaultInnerBoundary ?? 'tract'
+
+    // Fetch the city's polygon (full places-of-state call, cached after first)
+    this.loadingTarget = { level: 'state', label: `${city.displayName}` }
+    this.drilldown.setLoading(true)
+    const tStart = performance.now()
+    try {
+      // City polygon: pull places-of-state, find by GEOID
+      const placesFc = await this.geoLoader.places(city.stateFips)
+      const cityFeature =
+        placesFc.features.find((f) => String(f.properties?.['GEOID'] ?? '') === city.geoid) ?? null
+      this.selectedCityFeature = cityFeature as GeoJsonFeature | null
+
+      // Load Outer City via drillProvider
+      await this.loadView('outer')
+      this.recordTiming('state', performance.now() - tStart)
+    } catch (err) {
+      console.error('[LocalVision] City selection failed:', err)
+    } finally {
+      this.loadingTarget = null
+      this.drilldown.setLoading(false)
+    }
+  }
+
+  /**
+   * Load (or reload) a view for the currently selected city. The drillProvider
+   * does the actual fetching; we then mount the view if needed and push it
+   * into loadedViews so the toggle gets a proper button for it.
+   */
+  private async loadView(view: ViewMode): Promise<void> {
+    if (!this.options.drillProvider || !this.selectedCity) return
+    const city = this.selectedCity
+    const level = view === 'outer' ? this.outerBoundary : this.innerBoundary
+    // Place GEOIDs are state+place (no county component) so we can't derive
+    // the city's containing county directly. For MVP, inner-view fetches
+    // state-wide tracts/bg; the city focus overlay shows where the city is.
+    const context = { stateFips: city.stateFips }
+
+    this.loadingTarget = {
+      level,
+      label: `${city.displayName} — ${LEVEL_META[level]?.label ?? level}`,
+    }
+    this.drilldown.setLoading(true)
+    const start = performance.now()
+    try {
+      const binding = await this.options.drillProvider({
+        level,
+        parent: { geoid: city.geoid, label: city.displayName, properties: {} },
+        context,
+      })
+      if (!binding) return
+
+      // Cache binding so re-mounts (after view switch) reuse it
+      this.viewBindings.set(view, binding)
+
+      // Activate this view
+      this.activeView = view
+      this.loadedViews.add(view)
+      this.renderViewToggle()
+      this.syncHeaderForView(view)
+      this.mountView(view)
+
+      // Update drilldown root for this view
+      const newRoot: DrilldownLevel = {
+        id: `root:${view}:${level}`,
+        label: `${city.displayName} ${LEVEL_META[level]?.label ?? level}`,
+        level,
+        context,
+        parent: { geoid: city.geoid, label: city.displayName },
+      }
+      this.drilldown.setRoot(newRoot, binding)
+      this.breadcrumbEl.style.display = ''
+      this.syncTimeForBinding(binding)
+
+      // Apply city focus overlay (mountView already does this on construction;
+      // call again here in case data finished loading after style-load).
+      if (this.selectedCityFeature) {
+        this.outerView?.setCityFocus(this.selectedCityFeature)
+      }
+
+      this.recordTiming(level, performance.now() - start)
+    } catch (err) {
+      console.error(`[LocalVision] Failed to load ${view} view:`, err)
+    } finally {
+      this.loadingTarget = null
+      this.drilldown.setLoading(false)
+    }
   }
 
   // ── Private — view lifecycle ──────────────────────────────────────────────────
 
   private mountView(view: ViewMode): void {
-    this.bodyEl.innerHTML = ''
     this.kpiSlotEl.innerHTML = ''
+    this.destroyActiveView()
 
-    const container = document.createElement('div')
-    container.style.cssText = 'width:100%;height:100%;'
-    this.bodyEl.appendChild(container)
+    // Create / reuse a view container so the loading overlay (also a child
+    // of bodyEl) doesn't get wiped on every mount.
+    if (this.viewContainerEl) {
+      this.viewContainerEl.innerHTML = ''
+    } else {
+      this.viewContainerEl = document.createElement('div')
+      this.viewContainerEl.className = 'lv-view-container'
+      this.viewContainerEl.style.cssText = 'width:100%;height:100%;'
+      this.bodyEl.appendChild(this.viewContainerEl)
+    }
+    const container = this.viewContainerEl
 
-    if (view === 'inner') {
+    const cityFirst = !!this.selectedCity
+    const cachedBinding = this.viewBindings.get(view)
+    const optionsBinding = (this.options.outer as { binding?: import('../data/types').DataBinding }).binding
+
+    // City-first: both views use OuterCityView (Inner is just a finer scope).
+    // Legacy: respect options.inner / options.outer separately as before.
+    if (!cityFirst && view === 'inner' && this.options.inner) {
       this.innerView = new InnerCityView({
         ...this.options.inner,
         container,
         theme: this.options.theme,
       })
+      if (this.selectedCityFeature) this.innerView.setCityFocus(this.selectedCityFeature)
       this.forwardListeners(this.innerView)
     } else {
       this.outerView = new OuterCityView({
         ...this.options.outer,
+        binding: cachedBinding ?? optionsBinding,
         container,
         theme: this.options.theme,
         headerEl: this.kpiSlotEl,
@@ -496,17 +771,21 @@ export class LocalVisionApp {
           ? (c) => this.drillInto(c.id, c.label, c.properties)
           : undefined,
       })
-      // If a time bar is active, push current time to the freshly-mounted view
       const t = this.time.currentValue()
       if (t != null) this.outerView.setCurrentTime(t)
+      if (this.selectedCityFeature) this.outerView.setCityFocus(this.selectedCityFeature)
       this.forwardListeners(this.outerView)
     }
 
-    // Auto-load boundary overlay if a context is configured
-    if (this.options.boundaryContext) {
+    // Auto-load boundary overlay only in legacy mode with a static context.
+    if (!cityFirst && this.options.boundaryContext) {
       const level = view === 'inner' ? this.innerBoundary : this.outerBoundary
       void this.fetchAndApplyBoundary(level, view)
     }
+
+    // Reveal header controls + kpi slot if outer mode
+    this.kpiSlotEl.style.display = view === 'outer' ? '' : 'none'
+    this.dividerEl.style.display = view === 'outer' ? '' : 'none'
   }
 
   private destroyActiveView(): void {
