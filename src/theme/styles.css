@@ -352,3 +352,56 @@
   font-size: 11px;
   font-style: italic;
 }
+
+/* ── Loading overlay ────────────────────────────────────────────────────── */
+
+.lv-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 23, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: lv-fade-in 0.15s ease-out;
+}
+
+.lv-loading-card {
+  background: var(--lv-color-surface-elevated);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 10px;
+  padding: 24px 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-width: 240px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.lv-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--lv-color-border);
+  border-top-color: var(--lv-color-primary);
+  border-radius: 50%;
+  animation: lv-spin 0.8s linear infinite;
+}
+
+.lv-loading-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lv-color-text);
+  text-align: center;
+}
+
+.lv-loading-elapsed {
+  font-size: 11px;
+  color: var(--lv-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes lv-spin { to { transform: rotate(360deg); } }
+@keyframes lv-fade-in { from { opacity: 0; } to { opacity: 1; } }

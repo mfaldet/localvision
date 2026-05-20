@@ -120,20 +120,25 @@
         defaultView: 'outer',
         defaultOuterBoundary: 'county',
         boundaryContext: { stateFips: '27' },
-        // Drill-down: county → tracts of that county → block groups of that tract
+        // Drill / level-swap provider. Called by:
+        //  1. The drill button: county → tract → bg (deeper)
+        //  2. The boundary dropdown: county ↔ place ↔ cousub (sibling swaps)
         drillProvider: async ({ level, parent, context }) => {
           console.log(`[drill] → ${level} for ${parent.label}`)
           const stateFips = context.stateFips ?? '27'
 
-          // Boundaries
+          // Boundaries — pick the right fetch for this level
           let boundariesPromise
-          if (level === 'tract') {
-            boundariesPromise = loader.tracts(stateFips, context.countyFips)
-          } else if (level === 'bg') {
-            boundariesPromise = loader.blockGroups(stateFips, context.countyFips)
-          } else {
-            console.warn(`[drill] no provider for level: ${level}`)
-            return null
+          switch (level) {
+            case 'state':  boundariesPromise = loader.states(); break
+            case 'county': boundariesPromise = loader.counties(stateFips); break
+            case 'place':  boundariesPromise = loader.places(stateFips); break
+            case 'cousub': boundariesPromise = loader.countySubdivisions(stateFips); break
+            case 'tract':  boundariesPromise = loader.tracts(stateFips, context.countyFips); break
+            case 'bg':     boundariesPromise = loader.blockGroups(stateFips, context.countyFips); break
+            default:
+              console.warn(`[drill] no provider for level: ${level}`)
+              return null
           }
 
           // ACS data — same variables at every level

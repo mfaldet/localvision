@@ -8,6 +8,7 @@ import type {
 import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
 import { BoundaryLoader } from '../geo/loader'
+import { getStateMeta, resolveStateFips } from '../geo/fips'
 import { SelectionStore } from '../state/selection'
 import {
   DrilldownStore,
@@ -53,6 +54,11 @@ export class LocalVisionApp {
   private selection: SelectionStore
   private drilldown: DrilldownStore
   private breadcrumbEl: HTMLElement
+  private loadingOverlayEl: HTMLElement
+  private loadingLabelEl: HTMLElement
+  private loadingElapsedEl: HTMLElement
+  private loadingStart: number | null = null
+  private loadingTimer: ReturnType<typeof setInterval> | null = null
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
@@ -110,10 +116,34 @@ export class LocalVisionApp {
     // ── Body ─────────────────────────────────────────────────────────────────
     this.bodyEl = document.createElement('div')
     this.bodyEl.className = 'lv-app-body'
+    this.bodyEl.style.position = 'relative' // anchor for loading overlay
     this.root.appendChild(this.bodyEl)
 
-    // Drill-down store wiring (renders breadcrumb on changes)
-    this.drilldown.subscribe((state) => this.renderBreadcrumb(state))
+    // Loading overlay (mounted but hidden until a fetch is in-flight)
+    this.loadingOverlayEl = document.createElement('div')
+    this.loadingOverlayEl.className = 'lv-loading-overlay'
+    this.loadingOverlayEl.style.display = 'none'
+    const card = document.createElement('div')
+    card.className = 'lv-loading-card'
+    const spinner = document.createElement('div')
+    spinner.className = 'lv-loading-spinner'
+    this.loadingLabelEl = document.createElement('div')
+    this.loadingLabelEl.className = 'lv-loading-label'
+    this.loadingLabelEl.textContent = 'Loading…'
+    this.loadingElapsedEl = document.createElement('div')
+    this.loadingElapsedEl.className = 'lv-loading-elapsed'
+    card.appendChild(spinner)
+    card.appendChild(this.loadingLabelEl)
+    card.appendChild(this.loadingElapsedEl)
+    this.loadingOverlayEl.appendChild(card)
+    this.bodyEl.appendChild(this.loadingOverlayEl)
+
+    // Drill-down store wiring: breadcrumb on every change, loading overlay
+    // on the loading flag specifically.
+    this.drilldown.subscribe((state) => {
+      this.renderBreadcrumb(state)
+      this.updateLoadingOverlay(state.loading, state.current?.level.label)
+    })
 
     // Render initial state
     this.syncHeaderForView(this.activeView)
@@ -212,6 +242,7 @@ export class LocalVisionApp {
   }
 
   destroy(): void {
+    if (this.loadingTimer) clearInterval(this.loadingTimer)
     this.destroyActiveView()
     this.root.innerHTML = ''
     this.root.classList.remove('lv-root')
@@ -270,10 +301,60 @@ export class LocalVisionApp {
         this.outerBoundary = boundary as OuterLevel
       }
       this.emit('boundaryChange', { boundary, view: this.activeView })
-      void this.fetchAndApplyBoundary(boundary, this.activeView)
+
+      // Full data swap when a drillProvider is configured + outer view active.
+      // Otherwise fall back to the legacy overlay-only fetch.
+      if (this.options.drillProvider && this.activeView === 'outer') {
+        void this.swapToLevel(boundary as OuterLevel)
+      } else {
+        void this.fetchAndApplyBoundary(boundary, this.activeView)
+      }
     })
 
     return sel
+  }
+
+  /**
+   * Replace the active level entirely. Used when the boundary dropdown
+   * changes and the app has a drillProvider configured: we don't just paint
+   * outlines on top of stale data, we swap the choropleth + data + charts
+   * to the new level.
+   *
+   * Resets the drill stack to a new root at this level. Any previously-cached
+   * deeper levels are discarded (different parent → different data).
+   */
+  private async swapToLevel(level: OuterLevel): Promise<void> {
+    const provider = this.options.drillProvider
+    const ctx = this.options.boundaryContext
+    if (!provider || !ctx) return
+
+    const stateFips = resolveStateFips(ctx.stateFips)
+    const stateMeta = getStateMeta(stateFips)
+    const stateLabel = stateMeta?.name ?? stateFips
+    const levelLabel = LEVEL_META[level]?.label ?? level
+
+    this.drilldown.setLoading(true)
+    try {
+      const binding = await provider({
+        level,
+        parent: { geoid: stateFips, label: stateLabel, properties: {} },
+        context: { stateFips },
+      })
+      if (!binding) return
+
+      const newRoot: DrilldownLevel = {
+        id: `root:${level}`,
+        label: `${stateLabel} ${levelLabel}`,
+        level,
+        context: { stateFips },
+      }
+      this.drilldown.setRoot(newRoot, binding)
+      this.outerView?.updateBinding(binding)
+    } catch (err) {
+      console.error('[LocalVision] Level swap failed:', err)
+    } finally {
+      this.drilldown.setLoading(false)
+    }
   }
 
   private buildToggle(): HTMLElement {
@@ -417,6 +498,32 @@ export class LocalVisionApp {
   private deriveRootLabel(): string {
     const levelLabel = LEVEL_META[this.outerBoundary]?.label ?? this.outerBoundary
     return levelLabel
+  }
+
+  /**
+   * Show / hide the centered loading overlay and tick the elapsed-time
+   * counter every 100ms while a fetch is in flight.
+   */
+  private updateLoadingOverlay(loading: boolean, levelLabel?: string): void {
+    if (loading) {
+      this.loadingOverlayEl.style.display = ''
+      this.loadingLabelEl.textContent = `Loading ${levelLabel ?? 'data'}…`
+      this.loadingStart = performance.now()
+      this.loadingElapsedEl.textContent = '0.0s'
+      if (this.loadingTimer) clearInterval(this.loadingTimer)
+      this.loadingTimer = setInterval(() => {
+        if (this.loadingStart === null) return
+        const elapsed = (performance.now() - this.loadingStart) / 1000
+        this.loadingElapsedEl.textContent = `${elapsed.toFixed(1)}s elapsed`
+      }, 100)
+    } else {
+      this.loadingOverlayEl.style.display = 'none'
+      this.loadingStart = null
+      if (this.loadingTimer) {
+        clearInterval(this.loadingTimer)
+        this.loadingTimer = null
+      }
+    }
   }
 
   private renderBreadcrumb(state: DrilldownState): void {
