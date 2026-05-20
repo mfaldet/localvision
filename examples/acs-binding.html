@@ -79,7 +79,7 @@
     }
 
     try {
-      const loader = new BoundaryLoader({ sessionCache: true })
+      const loader = new BoundaryLoader({ persistentCache: true })
       const acs = new CensusACS({
         apiKey: import.meta.env.VITE_CENSUS_API_KEY, // paste into .env.local
         sessionCache: true,

@@ -57,8 +57,13 @@ export class LocalVisionApp {
   private loadingOverlayEl: HTMLElement
   private loadingLabelEl: HTMLElement
   private loadingElapsedEl: HTMLElement
+  private loadingProgressBarEl: HTMLElement
   private loadingStart: number | null = null
   private loadingTimer: ReturnType<typeof setInterval> | null = null
+  /** Rolling history of recent fetch durations per level for ETA display. */
+  private fetchTimings = new Map<string, number[]>()
+  /** What level / label we're currently loading toward, if anything. */
+  private loadingTarget: { level: string; label: string } | null = null
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
@@ -132,17 +137,25 @@ export class LocalVisionApp {
     this.loadingLabelEl.textContent = 'Loading…'
     this.loadingElapsedEl = document.createElement('div')
     this.loadingElapsedEl.className = 'lv-loading-elapsed'
+    const progressTrack = document.createElement('div')
+    progressTrack.className = 'lv-loading-progress-track'
+    this.loadingProgressBarEl = document.createElement('div')
+    this.loadingProgressBarEl.className = 'lv-loading-progress-bar'
+    progressTrack.appendChild(this.loadingProgressBarEl)
     card.appendChild(spinner)
     card.appendChild(this.loadingLabelEl)
+    card.appendChild(progressTrack)
     card.appendChild(this.loadingElapsedEl)
     this.loadingOverlayEl.appendChild(card)
     this.bodyEl.appendChild(this.loadingOverlayEl)
 
     // Drill-down store wiring: breadcrumb on every change, loading overlay
-    // on the loading flag specifically.
+    // on the loading flag (using loadingTarget for the label + ETA).
     this.drilldown.subscribe((state) => {
       this.renderBreadcrumb(state)
-      this.updateLoadingOverlay(state.loading, state.current?.level.label)
+      const label = this.loadingTarget?.label ?? state.current?.level.label
+      const estimate = this.loadingTarget ? this.estimateTime(this.loadingTarget.level) : null
+      this.updateLoadingOverlay(state.loading, label, estimate)
     })
 
     // Render initial state
@@ -209,7 +222,9 @@ export class LocalVisionApp {
       },
     }
 
+    this.loadingTarget = { level: nextLevel, label: `${parentLabel} → ${capitalize(nextLevel)}` }
     this.drilldown.setLoading(true)
+    const start = performance.now()
     try {
       const binding = await this.options.drillProvider(target)
       if (!binding) return
@@ -223,9 +238,11 @@ export class LocalVisionApp {
       }
       this.drilldown.push(newLevel, binding)
       this.outerView?.updateBinding(binding)
+      this.recordTiming(nextLevel, performance.now() - start)
     } catch (err) {
       console.error('[LocalVision] Drill failed:', err)
     } finally {
+      this.loadingTarget = null
       this.drilldown.setLoading(false)
     }
   }
@@ -333,7 +350,9 @@ export class LocalVisionApp {
     const stateLabel = stateMeta?.name ?? stateFips
     const levelLabel = LEVEL_META[level]?.label ?? level
 
+    this.loadingTarget = { level, label: `${stateLabel} ${levelLabel}` }
     this.drilldown.setLoading(true)
+    const start = performance.now()
     try {
       const binding = await provider({
         level,
@@ -350,9 +369,11 @@ export class LocalVisionApp {
       }
       this.drilldown.setRoot(newRoot, binding)
       this.outerView?.updateBinding(binding)
+      this.recordTiming(level, performance.now() - start)
     } catch (err) {
       console.error('[LocalVision] Level swap failed:', err)
     } finally {
+      this.loadingTarget = null
       this.drilldown.setLoading(false)
     }
   }
@@ -501,29 +522,67 @@ export class LocalVisionApp {
   }
 
   /**
-   * Show / hide the centered loading overlay and tick the elapsed-time
-   * counter every 100ms while a fetch is in flight.
+   * Show / hide the centered loading overlay and tick the elapsed counter.
+   * When `estimateMs` is provided (rolling avg of past fetches for this level),
+   * the overlay shows expected completion + a derived progress percentage.
    */
-  private updateLoadingOverlay(loading: boolean, levelLabel?: string): void {
-    if (loading) {
-      this.loadingOverlayEl.style.display = ''
-      this.loadingLabelEl.textContent = `Loading ${levelLabel ?? 'data'}…`
-      this.loadingStart = performance.now()
-      this.loadingElapsedEl.textContent = '0.0s'
-      if (this.loadingTimer) clearInterval(this.loadingTimer)
-      this.loadingTimer = setInterval(() => {
-        if (this.loadingStart === null) return
-        const elapsed = (performance.now() - this.loadingStart) / 1000
-        this.loadingElapsedEl.textContent = `${elapsed.toFixed(1)}s elapsed`
-      }, 100)
-    } else {
+  private updateLoadingOverlay(
+    loading: boolean,
+    levelLabel?: string,
+    estimateMs?: number | null,
+  ): void {
+    if (!loading) {
       this.loadingOverlayEl.style.display = 'none'
       this.loadingStart = null
+      this.loadingProgressBarEl.style.width = '0%'
       if (this.loadingTimer) {
         clearInterval(this.loadingTimer)
         this.loadingTimer = null
       }
+      return
     }
+
+    this.loadingOverlayEl.style.display = ''
+    this.loadingLabelEl.textContent = `Loading ${levelLabel ?? 'data'}…`
+    this.loadingStart = performance.now()
+    const hasEstimate = typeof estimateMs === 'number' && estimateMs > 100
+    this.loadingProgressBarEl.style.display = hasEstimate ? '' : 'none'
+    this.loadingElapsedEl.textContent = hasEstimate
+      ? `~${(estimateMs! / 1000).toFixed(1)}s expected`
+      : '0.0s elapsed'
+
+    if (this.loadingTimer) clearInterval(this.loadingTimer)
+    this.loadingTimer = setInterval(() => {
+      if (this.loadingStart === null) return
+      const elapsed = (performance.now() - this.loadingStart) / 1000
+      if (hasEstimate) {
+        const est = estimateMs! / 1000
+        const remaining = Math.max(0, est - elapsed)
+        // Cap at 95% so we never look "done" before we are
+        const pct = Math.min(95, (elapsed / est) * 100)
+        this.loadingProgressBarEl.style.width = `${pct}%`
+        this.loadingElapsedEl.textContent = remaining > 0.2
+          ? `${elapsed.toFixed(1)}s · ~${remaining.toFixed(1)}s remaining`
+          : `${elapsed.toFixed(1)}s · finishing…`
+      } else {
+        this.loadingElapsedEl.textContent = `${elapsed.toFixed(1)}s elapsed`
+      }
+    }, 100)
+  }
+
+  /** Record a fetch duration for ETA estimates on future fetches. */
+  private recordTiming(level: string, ms: number): void {
+    const arr = this.fetchTimings.get(level) ?? []
+    arr.push(ms)
+    if (arr.length > 5) arr.shift()
+    this.fetchTimings.set(level, arr)
+  }
+
+  /** Rolling-average estimate (ms) for a level, or null if no history. */
+  private estimateTime(level: string): number | null {
+    const arr = this.fetchTimings.get(level)
+    if (!arr || arr.length === 0) return null
+    return arr.reduce((a, b) => a + b, 0) / arr.length
   }
 
   private renderBreadcrumb(state: DrilldownState): void {

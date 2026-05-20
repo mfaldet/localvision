@@ -46,30 +46,139 @@ const ACS_LAYER: Record<string, number> = {
 
 const PAGE_SIZE = 1000
 
+// ─── IndexedDB cache ──────────────────────────────────────────────────────────
+
+const IDB_NAME = 'localvision_geo'
+const IDB_STORE = 'boundaries'
+const IDB_VERSION = 1
+
+/**
+ * Tiny IDB wrapper for persisting fetched GeoJSON across page reloads.
+ * Survives where sessionStorage doesn't, and has gigabytes of capacity
+ * vs sessionStorage's ~5MB. All operations are resilient to IDB being
+ * unavailable (private mode, older browsers) — they silently no-op.
+ */
+class IDBCache {
+  private dbPromise: Promise<IDBDatabase | null> | null = null
+
+  private getDB(): Promise<IDBDatabase | null> {
+    if (this.dbPromise) return this.dbPromise
+    if (typeof indexedDB === 'undefined') {
+      this.dbPromise = Promise.resolve(null)
+      return this.dbPromise
+    }
+    this.dbPromise = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open(IDB_NAME, IDB_VERSION)
+        req.onupgradeneeded = () => {
+          const db = req.result
+          if (!db.objectStoreNames.contains(IDB_STORE)) {
+            db.createObjectStore(IDB_STORE)
+          }
+        }
+        req.onsuccess = () => resolve(req.result)
+        req.onerror = () => resolve(null)
+      } catch {
+        resolve(null)
+      }
+    })
+    return this.dbPromise
+  }
+
+  async get(key: string): Promise<GeoJsonFeatureCollection | undefined> {
+    const db = await this.getDB()
+    if (!db) return undefined
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction([IDB_STORE], 'readonly')
+        const req = tx.objectStore(IDB_STORE).get(key)
+        req.onsuccess = () => resolve(req.result as GeoJsonFeatureCollection | undefined)
+        req.onerror = () => resolve(undefined)
+      } catch {
+        resolve(undefined)
+      }
+    })
+  }
+
+  async set(key: string, value: GeoJsonFeatureCollection): Promise<void> {
+    const db = await this.getDB()
+    if (!db) return
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction([IDB_STORE], 'readwrite')
+        const req = tx.objectStore(IDB_STORE).put(value, key)
+        req.onsuccess = () => resolve()
+        req.onerror = () => resolve()
+      } catch {
+        resolve()
+      }
+    })
+  }
+
+  async clear(): Promise<void> {
+    const db = await this.getDB()
+    if (!db) return
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction([IDB_STORE], 'readwrite')
+        const req = tx.objectStore(IDB_STORE).clear()
+        req.onsuccess = () => resolve()
+        req.onerror = () => resolve()
+      } catch {
+        resolve()
+      }
+    })
+  }
+}
+
 // ─── Loader options ────────────────────────────────────────────────────────────
 
 export interface BoundaryLoaderOptions {
   /**
-   * Persist fetched GeoJSON in sessionStorage so page reloads don't re-fetch.
-   * Defaults to false (in-memory cache only).
+   * Persist fetched GeoJSON in sessionStorage (cleared when the tab closes,
+   * ~5 MB total quota). Mutually compatible with persistentCache but
+   * superseded by it on read.
    */
   sessionCache?: boolean
   /**
-   * Override layer IDs for TIGERweb MapServer. Useful if Census updates their
-   * service structure. Keys match ACS_LAYER above.
+   * Persist fetched GeoJSON in IndexedDB (survives reloads + tab close,
+   * ~50%+ of disk space quota). Recommended for any app that fetches
+   * tracts or block groups, which can each be several MB.
+   */
+  persistentCache?: boolean
+  /**
+   * Override layer IDs for TIGERweb MapServer. Useful if Census updates
+   * their service structure. Keys match ACS_LAYER above.
    */
   layerOverrides?: Partial<Record<string, number>>
+}
+
+export interface CacheStats {
+  /** Number of cache hits (memory + persisted layers combined). */
+  hits: number
+  /** Number of cache misses requiring a network fetch. */
+  misses: number
+  /** Number of network requests deduplicated by concurrent-fetch coalescing. */
+  coalesced: number
+  /** Current in-flight request count. */
+  inFlight: number
+  /** Number of entries in the in-memory cache. */
+  memSize: number
 }
 
 // ─── BoundaryLoader ────────────────────────────────────────────────────────────
 
 export class BoundaryLoader {
   private memCache = new Map<string, GeoJsonFeatureCollection>()
+  private inFlight = new Map<string, Promise<GeoJsonFeatureCollection>>()
   private useSessionCache: boolean
+  private idb: IDBCache | null
   private layers: Record<string, number>
+  private stats = { hits: 0, misses: 0, coalesced: 0 }
 
   constructor(options: BoundaryLoaderOptions = {}) {
     this.useSessionCache = options.sessionCache ?? false
+    this.idb = options.persistentCache ? new IDBCache() : null
     this.layers = { ...ACS_LAYER, ...options.layerOverrides }
   }
 
@@ -237,13 +346,27 @@ export class BoundaryLoader {
     )
   }
 
-  clearCache(): void {
+  /** Cache hit/miss/coalesce counters — useful for instrumentation + debugging. */
+  get cacheStats(): CacheStats {
+    return {
+      hits: this.stats.hits,
+      misses: this.stats.misses,
+      coalesced: this.stats.coalesced,
+      inFlight: this.inFlight.size,
+      memSize: this.memCache.size,
+    }
+  }
+
+  async clearCache(): Promise<void> {
     this.memCache.clear()
+    this.inFlight.clear()
+    this.stats = { hits: 0, misses: 0, coalesced: 0 }
     if (this.useSessionCache && typeof sessionStorage !== 'undefined') {
       Object.keys(sessionStorage)
         .filter((k) => k.startsWith('lv_geo_'))
         .forEach((k) => sessionStorage.removeItem(k))
     }
+    if (this.idb) await this.idb.clear()
   }
 
   // ── Internal: TIGERweb paginated queries ──────────────────────────────────────
@@ -315,34 +438,74 @@ export class BoundaryLoader {
 
   // ── Internal: cache helpers ───────────────────────────────────────────────────
 
+  /**
+   * Cache pipeline with four lookup layers (memory → in-flight dedup → IDB
+   * → sessionStorage) and write-through to whichever persisters are enabled.
+   *
+   * Concurrent calls for the same key resolve to a single shared promise,
+   * preventing duplicate fetches when multiple views request the same data.
+   */
   private async cached(
     key: string,
     fn: () => Promise<GeoJsonFeatureCollection>,
   ): Promise<GeoJsonFeatureCollection> {
+    // 1. Memory cache
     const mem = this.memCache.get(key)
-    if (mem) return mem
+    if (mem) {
+      this.stats.hits++
+      return mem
+    }
 
+    // 2. In-flight dedup — share the existing fetch
+    const existing = this.inFlight.get(key)
+    if (existing) {
+      this.stats.coalesced++
+      return existing
+    }
+
+    // 3. Persisted caches (IDB first, then sessionStorage)
+    if (this.idb) {
+      const fromIdb = await this.idb.get(key)
+      if (fromIdb) {
+        this.stats.hits++
+        this.memCache.set(key, fromIdb)
+        return fromIdb
+      }
+    }
     if (this.useSessionCache && typeof sessionStorage !== 'undefined') {
       const stored = sessionStorage.getItem(`lv_geo_${key}`)
       if (stored) {
-        const parsed = JSON.parse(stored) as GeoJsonFeatureCollection
-        this.memCache.set(key, parsed)
-        return parsed
+        try {
+          const parsed = JSON.parse(stored) as GeoJsonFeatureCollection
+          this.stats.hits++
+          this.memCache.set(key, parsed)
+          return parsed
+        } catch {
+          // corrupted entry — fall through to network
+        }
       }
     }
 
-    const data = await fn()
-    this.memCache.set(key, data)
-
-    if (this.useSessionCache && typeof sessionStorage !== 'undefined') {
-      try {
-        sessionStorage.setItem(`lv_geo_${key}`, JSON.stringify(data))
-      } catch {
-        // quota exceeded — skip silently
+    // 4. Network fetch — register as in-flight so concurrent callers coalesce
+    this.stats.misses++
+    const promise = fn().then((data) => {
+      this.memCache.set(key, data)
+      if (this.idb) void this.idb.set(key, data)
+      if (this.useSessionCache && typeof sessionStorage !== 'undefined') {
+        try {
+          sessionStorage.setItem(`lv_geo_${key}`, JSON.stringify(data))
+        } catch {
+          // quota exceeded — silently skip
+        }
       }
+      return data
+    })
+    this.inFlight.set(key, promise)
+    try {
+      return await promise
+    } finally {
+      this.inFlight.delete(key)
     }
-
-    return data
   }
 }
 
