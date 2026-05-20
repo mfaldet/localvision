@@ -46,6 +46,21 @@ const ACS_LAYER: Record<string, number> = {
 
 const PAGE_SIZE = 1000
 
+/**
+ * Strip the trailing Census LSAD descriptor from a place name. TIGERweb
+ * returns names like "Rosemount city", "Bayport CDP", "Centerville township"
+ * — fine in raw data, ugly in UI. Removes the suffix and trims whitespace.
+ * Returns the original string if no recognized suffix is found.
+ *
+ * Recognized suffixes (case-insensitive): city, town, village, borough,
+ * CDP, township, municipality, comunidad, zona urbana.
+ */
+export function stripLsadSuffix(name: string): string {
+  return name
+    .replace(/\s+(city|town|village|borough|CDP|township|municipality|comunidad|zona urbana)$/i, '')
+    .trim()
+}
+
 // ─── IndexedDB cache ──────────────────────────────────────────────────────────
 
 const IDB_NAME = 'localvision_geo'
@@ -85,14 +100,14 @@ class IDBCache {
     return this.dbPromise
   }
 
-  async get(key: string): Promise<GeoJsonFeatureCollection | undefined> {
+  async get<T = GeoJsonFeatureCollection>(key: string): Promise<T | undefined> {
     const db = await this.getDB()
     if (!db) return undefined
     return new Promise((resolve) => {
       try {
         const tx = db.transaction([IDB_STORE], 'readonly')
         const req = tx.objectStore(IDB_STORE).get(key)
-        req.onsuccess = () => resolve(req.result as GeoJsonFeatureCollection | undefined)
+        req.onsuccess = () => resolve(req.result as T | undefined)
         req.onerror = () => resolve(undefined)
       } catch {
         resolve(undefined)
@@ -100,7 +115,7 @@ class IDBCache {
     })
   }
 
-  async set(key: string, value: GeoJsonFeatureCollection): Promise<void> {
+  async set<T = GeoJsonFeatureCollection>(key: string, value: T): Promise<void> {
     const db = await this.getDB()
     if (!db) return
     return new Promise((resolve) => {
@@ -255,16 +270,29 @@ export class BoundaryLoader {
   }
 
   private async placesIndexForState(stateFips: string): Promise<PlaceIndexEntry[]> {
+    // 1. Memory
     const cached = this.placesIdxCache.get(stateFips)
     if (cached) return cached
+    // 2. In-flight dedup
     const inFlight = this.placesIdxInFlight.get(stateFips)
     if (inFlight) return inFlight
+    // 3. IDB (survives reloads — the place index doesn't change often)
+    const idbKey = `placesIndex:${stateFips}`
+    if (this.idb) {
+      const fromIdb = await this.idb.get<PlaceIndexEntry[]>(idbKey)
+      if (fromIdb && Array.isArray(fromIdb) && fromIdb.length > 0) {
+        this.placesIdxCache.set(stateFips, fromIdb)
+        return fromIdb
+      }
+    }
 
+    // 4. Network
     const promise = this.fetchPlacesIndexForState(stateFips)
     this.placesIdxInFlight.set(stateFips, promise)
     try {
       const entries = await promise
       this.placesIdxCache.set(stateFips, entries)
+      if (this.idb) void this.idb.set<PlaceIndexEntry[]>(idbKey, entries)
       return entries
     } finally {
       this.placesIdxInFlight.delete(stateFips)
@@ -304,15 +332,16 @@ export class BoundaryLoader {
       }
       const feats = page.features ?? []
       for (const f of feats) {
-        const name = String(f.properties?.['NAME'] ?? '')
+        const rawName = String(f.properties?.['NAME'] ?? '')
         const geoid = String(f.properties?.['GEOID'] ?? '')
-        if (name && geoid) {
+        if (rawName && geoid) {
+          const cleanName = stripLsadSuffix(rawName)
           entries.push({
             geoid,
-            name,
+            name: cleanName,
             stateFips,
             stateAbbr: abbr,
-            displayName: abbr ? `${name}, ${abbr}` : name,
+            displayName: abbr ? `${cleanName}, ${abbr}` : cleanName,
           })
         }
       }

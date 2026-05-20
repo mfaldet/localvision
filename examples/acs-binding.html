@@ -124,8 +124,11 @@
               return null
           }
 
+          // Omit `state` entirely at state-level so ACS issues `for=state:*`
+          // and returns all 50 states. Passing `state: '*'` would route
+          // through resolveStateFips and throw.
           const geoForAcs = level === 'state'
-            ? { state: '*', level }  // nation-wide for the state-level choropleth
+            ? { level }
             : { state: stateFips, level, county: context.countyFips }
 
           const tablePromise = acs.fetchTemporal({

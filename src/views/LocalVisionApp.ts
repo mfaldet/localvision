@@ -9,6 +9,7 @@ import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
 import { BoundaryLoader, type PlaceIndexEntry } from '../geo/loader'
 import { getStateMeta, resolveStateFips } from '../geo/fips'
+import { bboxCenter, findFeatureContaining } from '../geo/spatial'
 import type { GeoJsonFeature } from '../types'
 import { SelectionStore } from '../state/selection'
 import {
@@ -78,6 +79,8 @@ export class LocalVisionApp {
   private emptyStateEl: HTMLElement
   private selectedCity: PlaceIndexEntry | null = null
   private selectedCityFeature: GeoJsonFeature | null = null
+  /** Resolved via point-in-polygon when the city is selected. Used by Inner. */
+  private selectedCityCountyFips: string | null = null
   private placesIndex: PlaceIndexEntry[] = []
   /** Views that have loaded data (and therefore appear in the toggle). */
   private loadedViews = new Set<ViewMode>()
@@ -570,28 +573,49 @@ export class LocalVisionApp {
 
     input.addEventListener('input', () => this.renderCityMatches(input.value, dropdown))
     input.addEventListener('focus', () => {
+      // If the input is showing the currently-selected city's displayName,
+      // clear it so the user can start a fresh search. Without this, the
+      // input value ("Rosemount, MN") matches nothing in the index (which
+      // keys by short name) and the dropdown shows "No matches".
+      if (this.selectedCity && input.value === this.selectedCity.displayName) {
+        input.value = ''
+      }
       if (input.value.trim().length > 0) this.renderCityMatches(input.value, dropdown)
     })
     input.addEventListener('blur', () => {
-      // Delay so click on dropdown registers first
-      setTimeout(() => { dropdown.style.display = 'none' }, 150)
+      // Delay so click on dropdown registers first. Also restore the
+      // selected-city name if the user cleared and didn't pick a new one.
+      setTimeout(() => {
+        dropdown.style.display = 'none'
+        if (input.value.trim() === '' && this.selectedCity) {
+          input.value = this.selectedCity.displayName
+        }
+      }, 150)
     })
 
     return { wrapEl: wrap, inputEl: input, dropdownEl: dropdown }
   }
 
   private renderCityMatches(query: string, dropdown: HTMLElement): void {
-    const q = query.trim().toLowerCase()
+    // Normalize: strip trailing ", ST" abbreviation and any LSAD descriptor.
+    // The index stores short names ("Rosemount") so a literal "rosemount, mn"
+    // query would never match without this normalization step.
+    const q = normalizeCityQuery(query)
     dropdown.innerHTML = ''
     if (q.length < 2 || this.placesIndex.length === 0) {
       dropdown.style.display = 'none'
       return
     }
 
+    // Optional state filter from the trailing ", ST" — narrows when user
+    // types "rosemount, mn" so MN entries are prioritized.
+    const stateFilter = extractStateAbbr(query)
+
     // Score: name startsWith > name includes; cap at 25 results
     const startsWith: PlaceIndexEntry[] = []
     const includes: PlaceIndexEntry[] = []
     for (const p of this.placesIndex) {
+      if (stateFilter && p.stateAbbr.toLowerCase() !== stateFilter) continue
       const nameLower = p.name.toLowerCase()
       if (nameLower.startsWith(q)) startsWith.push(p)
       else if (nameLower.includes(q)) includes.push(p)
@@ -626,6 +650,9 @@ export class LocalVisionApp {
    */
   private async selectCity(city: PlaceIndexEntry): Promise<void> {
     this.selectedCity = city
+    this.selectedCityFeature = null
+    this.selectedCityCountyFips = null
+    this.viewBindings.clear()
     this.citySearchEl.value = city.displayName
     this.citySearchDropdownEl.style.display = 'none'
 
@@ -651,6 +678,15 @@ export class LocalVisionApp {
         placesFc.features.find((f) => String(f.properties?.['GEOID'] ?? '') === city.geoid) ?? null
       this.selectedCityFeature = cityFeature as GeoJsonFeature | null
 
+      // Resolve containing county via point-in-polygon (bbox-center → counties).
+      // Used as the parent context when Inner view loads, so tract / bg fetches
+      // are scoped to one county instead of the whole state. Best-effort —
+      // failures fall through to state-wide inner fetches.
+      this.selectedCityCountyFips = await this.resolveContainingCountyFips(
+        city.stateFips,
+        this.selectedCityFeature,
+      )
+
       // Load Outer City via drillProvider
       await this.loadView('outer')
       this.recordTiming('state', performance.now() - tStart)
@@ -663,6 +699,32 @@ export class LocalVisionApp {
   }
 
   /**
+   * Find the county containing the city via point-in-polygon over the
+   * state's county boundaries (cached after first call). Returns the 3-digit
+   * county FIPS, or null if no containment match (very rare — usually means
+   * a city polygon error or a city that straddles a county boundary).
+   */
+  private async resolveContainingCountyFips(
+    stateFips: string,
+    cityFeature: GeoJsonFeature | null,
+  ): Promise<string | null> {
+    if (!cityFeature) return null
+    try {
+      const counties = await this.geoLoader.counties(stateFips)
+      const center = bboxCenter(cityFeature.geometry)
+      const containing = findFeatureContaining(
+        center,
+        counties.features as unknown as GeoJsonFeature[],
+      )
+      const countyFips = containing?.properties?.['COUNTY']
+      return typeof countyFips === 'string' ? countyFips : null
+    } catch (err) {
+      console.warn('[LocalVision] Could not resolve containing county:', err)
+      return null
+    }
+  }
+
+  /**
    * Load (or reload) a view for the currently selected city. The drillProvider
    * does the actual fetching; we then mount the view if needed and push it
    * into loadedViews so the toggle gets a proper button for it.
@@ -671,10 +733,14 @@ export class LocalVisionApp {
     if (!this.options.drillProvider || !this.selectedCity) return
     const city = this.selectedCity
     const level = view === 'outer' ? this.outerBoundary : this.innerBoundary
-    // Place GEOIDs are state+place (no county component) so we can't derive
-    // the city's containing county directly. For MVP, inner-view fetches
-    // state-wide tracts/bg; the city focus overlay shows where the city is.
-    const context = { stateFips: city.stateFips }
+    // Inner views narrow to the city's containing county (resolved via
+    // point-in-polygon at selection time) so tract / bg fetches are one
+    // county's worth instead of the whole state. Outer views stay state-
+    // scoped — county filtering would defeat their comparison purpose.
+    const context: { stateFips: string; countyFips?: string } = { stateFips: city.stateFips }
+    if (view === 'inner' && this.selectedCityCountyFips) {
+      context.countyFips = this.selectedCityCountyFips
+    }
 
     this.loadingTarget = {
       level,
@@ -1029,4 +1095,23 @@ function nextDrillLevel(
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+const TRAILING_STATE_ABBR_RE = /\s*,\s*([A-Za-z]{2})\s*$/
+const LSAD_SUFFIX_RE = /\s+(city|town|village|borough|CDP|township|municipality|comunidad|zona urbana)$/i
+
+/** Strip trailing state abbr and LSAD descriptor, lower-case, trim. */
+function normalizeCityQuery(q: string): string {
+  return q
+    .toLowerCase()
+    .trim()
+    .replace(TRAILING_STATE_ABBR_RE, '')
+    .replace(LSAD_SUFFIX_RE, '')
+    .trim()
+}
+
+/** Pull the trailing ", XX" state abbreviation out of a search query. */
+function extractStateAbbr(q: string): string | null {
+  const m = q.match(TRAILING_STATE_ABBR_RE)
+  return m ? m[1].toLowerCase() : null
 }

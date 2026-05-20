@@ -31,8 +31,30 @@ export type {
 export { DEFAULT_THEME } from './theme/tokens'
 export type { ResolvedTheme } from './theme/tokens'
 
-export { BoundaryLoader, LEVEL_META, STATES, resolveStateFips, padCountyFips, getStateMeta } from './geo/index'
-export type { BoundaryLoaderOptions, CacheStats, PlaceIndexEntry, OuterLevel, InnerLevel, AnyLevel, LevelMeta, StateMeta } from './geo/index'
+export {
+  BoundaryLoader,
+  LEVEL_META,
+  STATES,
+  resolveStateFips,
+  padCountyFips,
+  getStateMeta,
+  stripLsadSuffix,
+  bbox,
+  bboxCenter,
+  pointInPolygon,
+  findFeatureContaining,
+} from './geo/index'
+export type {
+  BoundaryLoaderOptions,
+  CacheStats,
+  PlaceIndexEntry,
+  BBox,
+  OuterLevel,
+  InnerLevel,
+  AnyLevel,
+  LevelMeta,
+  StateMeta,
+} from './geo/index'
 
 // ─── Cross-filtering (Bundle 2) ──────────────────────────────────────────────
 export { SelectionStore } from './state/selection'
