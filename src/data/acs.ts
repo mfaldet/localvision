@@ -112,6 +112,52 @@ export class CensusACS {
     return table
   }
 
+  /**
+   * Fetch the same variables across multiple ACS 5-year vintages and merge
+   * the responses into a single temporal DataTable. Each row is tagged with
+   * its year via `row.time`, and the resulting table carries a `timeAxis`
+   * so time-aware views animate through it.
+   *
+   * Vintages are fetched in parallel. Caching is per-year (a vintage already
+   * in the cache from a previous fetchTemporal call is reused).
+   */
+  async fetchTemporal(
+    params: Omit<AcsFetchParams, 'year'> & { years: number[] },
+  ): Promise<DataTable> {
+    if (params.years.length === 0) {
+      throw new Error('[LocalVision] fetchTemporal requires at least one year.')
+    }
+
+    const tables = await Promise.all(
+      params.years.map((year) =>
+        this.fetch({ variables: params.variables, geography: params.geography, year }),
+      ),
+    )
+
+    // Tag each row with its vintage year, then concatenate.
+    const rows: DataRow[] = []
+    for (let i = 0; i < tables.length; i++) {
+      const year = params.years[i]
+      for (const row of tables[i].rows) {
+        rows.push({ ...row, time: year })
+      }
+    }
+
+    return {
+      variables: tables[0].variables,
+      rows,
+      meta: {
+        source: 'Census ACS 5-year',
+        geographyLevel: params.geography.level,
+        fetchedAt: new Date().toISOString(),
+      },
+      timeAxis: {
+        times: [...params.years],
+        label: 'Year',
+      },
+    }
+  }
+
   clearCache(): void {
     this.memCache.clear()
     if (this.useSessionCache && typeof sessionStorage !== 'undefined') {

@@ -35,6 +35,8 @@ export class OuterCityView {
   private unsubscribeSelection: () => void = () => {}
   private communityFids = new Map<string, number[]>()
   private onDrillRequest?: (c: { id: string; label: string; properties: Record<string, unknown> }) => void
+  private activeBinding: DataBinding | null = null
+  private currentTime: string | number | null = null
   private drillButtonLabel?: string
   private listeners: Partial<{ [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[] }> = {}
   private resizeObserver: ResizeObserver
@@ -48,7 +50,11 @@ export class OuterCityView {
 
     // Source of truth: a DataBinding (preferred) or hand-built communities.
     if (options.binding) {
-      this.communities = bindingToCommunities(options.binding)
+      this.activeBinding = options.binding
+      // For temporal bindings, default to the most recent time
+      const times = options.binding.table.timeAxis?.times
+      this.currentTime = times ? times[times.length - 1] : null
+      this.communities = bindingToCommunities(options.binding, this.currentTime)
       const kpiDefs = options.kpiDefs ?? bindingToKpiDefs(options.binding)
       this.kpiDefs = new Map(kpiDefs.map((k) => [k.id, k]))
     } else if (options.communities) {
@@ -168,7 +174,12 @@ export class OuterCityView {
    * flies to the new extent.
    */
   updateBinding(binding: DataBinding): void {
-    this.communities = bindingToCommunities(binding)
+    this.activeBinding = binding
+    // Reset currentTime: prefer the most recent if the new binding is temporal
+    const times = binding.table.timeAxis?.times
+    this.currentTime = times ? times[times.length - 1] : null
+
+    this.communities = bindingToCommunities(binding, this.currentTime)
     const kpiDefs = bindingToKpiDefs(binding)
     this.kpiDefs = new Map(kpiDefs.map((k) => [k.id, k]))
 
@@ -199,6 +210,32 @@ export class OuterCityView {
     }
 
     this.renderKpiSelector()
+    this.renderPanel()
+  }
+
+  /**
+   * Set the active time for a temporal binding. Re-derives community values
+   * from the table for the requested time and updates the choropleth source
+   * (no layer teardown, no camera move — just data swap). No-op if the
+   * current binding isn't temporal or the time is unchanged.
+   */
+  setCurrentTime(time: string | number): void {
+    if (!this.activeBinding?.table.timeAxis) return
+    if (time === this.currentTime) return
+
+    this.currentTime = time
+    this.communities = bindingToCommunities(this.activeBinding, this.currentTime)
+
+    if (this.map.isStyleLoaded()) {
+      const source = this.map.getSource(COMMUNITIES_SOURCE) as
+        | maplibregl.GeoJSONSource
+        | undefined
+      if (source) {
+        source.setData(this.buildMergedGeoJson() as GeoJSON.FeatureCollection)
+      }
+      this.updateChoropleth()
+    }
+    // No fitToAllCommunities — boundaries haven't changed, only values
     this.renderPanel()
   }
 
@@ -817,15 +854,47 @@ function collectCoords(geometry: CommunityRecord['geojson']['features'][0]['geom
  * Convert a DataBinding (boundaries + tabular data joined by GEOID) into the
  * CommunityRecord[] shape that OuterCityView's renderer expects internally.
  */
-function bindingToCommunities(binding: DataBinding): CommunityRecord[] {
+function bindingToCommunities(
+  binding: DataBinding,
+  currentTime?: string | number | null,
+): CommunityRecord[] {
+  // For temporal bindings, build a geoid → values index for the requested time.
+  // Falls back to the most recent time if currentTime is not in the timeAxis.
+  let timeIndex: Map<string, Record<string, number | null>> | null = null
+  if (binding.table.timeAxis) {
+    const times = binding.table.timeAxis.times
+    const resolvedTime =
+      currentTime != null && times.includes(currentTime)
+        ? currentTime
+        : times[times.length - 1]
+    timeIndex = new Map()
+    for (const row of binding.table.rows) {
+      if (row.time === resolvedTime) timeIndex.set(row.geoid, row.values)
+    }
+  }
+
   return binding.boundaries.features.map((f) => {
     const geoid = String(f.properties?.['_lv_geoid'] ?? '')
     const label = String(f.properties?.['_lv_label'] ?? geoid)
     const kpis: Record<string, number> = {}
-    for (const v of binding.table.variables) {
-      const val = f.properties?.[v.key]
-      if (typeof val === 'number') kpis[v.key] = val
+
+    if (timeIndex) {
+      // Temporal: pull values from the time-filtered index
+      const values = timeIndex.get(geoid)
+      if (values) {
+        for (const v of binding.table.variables) {
+          const val = values[v.key]
+          if (typeof val === 'number') kpis[v.key] = val
+        }
+      }
+    } else {
+      // Static: values were merged into feature properties at bind time
+      for (const v of binding.table.variables) {
+        const val = f.properties?.[v.key]
+        if (typeof val === 'number') kpis[v.key] = val
+      }
     }
+
     return {
       id: geoid,
       label,

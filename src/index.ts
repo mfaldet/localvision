@@ -49,6 +49,10 @@ export type {
   DrillProvider,
 } from './state/drilldown'
 
+// ─── Time dimension (Bundle 4) ───────────────────────────────────────────────
+export { TimeStore } from './state/time'
+export type { TimeState, TimeListener, TimeValue } from './state/time'
+
 // ─── Data Foundation (Bundle 1) ──────────────────────────────────────────────
 export {
   CensusACS,

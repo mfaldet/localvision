@@ -10,3 +10,6 @@ export type {
   DrillTarget,
   DrillProvider,
 } from './drilldown'
+
+export { TimeStore } from './time'
+export type { TimeState, TimeListener, TimeValue } from './time'

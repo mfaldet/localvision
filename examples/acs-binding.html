@@ -87,24 +87,6 @@
 
       // 1. Fetch county boundaries + ACS data in parallel
       setLoading('Fetching MN county boundaries and ACS data in parallel…')
-      const [boundaries, table] = await Promise.all([
-        loader.counties('27'),
-        acs.fetch({
-          variables: [
-            'median_household_income',
-            'total_population',
-            'median_gross_rent',
-            'median_home_value',
-            'per_capita_income',
-          ],
-          geography: { state: '27', level: 'county' },
-        }),
-      ])
-
-      // 2. Join them by GEOID
-      setLoading('Binding data to boundaries…')
-      const binding = bindDataToBoundaries(boundaries, table)
-
       // The set of ACS variables we fetch at every drill level.
       const VARIABLES = [
         'median_household_income',
@@ -113,6 +95,22 @@
         'median_home_value',
         'per_capita_income',
       ]
+      // ACS 5-year vintages to animate through
+      const YEARS = [2018, 2019, 2020, 2021, 2022]
+
+      setLoading(`Fetching MN county boundaries and ${YEARS.length} years of ACS data…`)
+      const [boundaries, table] = await Promise.all([
+        loader.counties('27'),
+        acs.fetchTemporal({
+          variables: VARIABLES,
+          geography: { state: '27', level: 'county' },
+          years: YEARS,
+        }),
+      ])
+
+      // 2. Join them by GEOID (binding holds rows for all years; view filters per current time)
+      setLoading('Binding data to boundaries…')
+      const binding = bindDataToBoundaries(boundaries, table)
 
       // 3. Render
       const app = new LocalVisionApp({
@@ -141,10 +139,12 @@
               return null
           }
 
-          // ACS data — same variables at every level
-          const tablePromise = acs.fetch({
+          // ACS data — same variables, all vintages, so the time slider
+          // keeps working after drilling
+          const tablePromise = acs.fetchTemporal({
             variables: VARIABLES,
             geography: { state: stateFips, level, county: context.countyFips },
+            years: YEARS,
           })
 
           const [b, t] = await Promise.all([boundariesPromise, tablePromise])

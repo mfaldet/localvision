@@ -13,6 +13,11 @@ export interface DataRow {
   name?: string
   /** Variable values keyed by VariableMeta.key (NOT the raw ACS code). */
   values: Record<string, number | null>
+  /**
+   * Optional time-point this row represents. When DataTable.timeAxis is set,
+   * the table is expected to contain one row per (geoid, time) pair.
+   */
+  time?: string | number
 }
 
 export interface DataTable {
@@ -27,6 +32,17 @@ export interface DataTable {
     year?: number
     geographyLevel?: string  // 'county', 'tract', etc.
     fetchedAt?: string       // ISO timestamp
+  }
+  /**
+   * Time-axis metadata. When present, the table holds time-varying data and
+   * views with time support animate through it via TimeStore. Each row should
+   * have a `time` field matching one of `times`.
+   */
+  timeAxis?: {
+    /** Ordered timeline values (e.g. [2018, 2019, 2020]). */
+    times: (string | number)[]
+    /** Optional label for the time axis (e.g. "Year"). */
+    label?: string
   }
 }
 

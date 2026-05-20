@@ -17,6 +17,7 @@ import {
   type DrilldownState,
   type DrillTarget,
 } from '../state/drilldown'
+import { TimeStore, type TimeState, type TimeValue } from '../state/time'
 import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
@@ -54,6 +55,11 @@ export class LocalVisionApp {
   private selection: SelectionStore
   private drilldown: DrilldownStore
   private breadcrumbEl: HTMLElement
+  private time: TimeStore
+  private timeBarEl: HTMLElement
+  private timePlayBtn: HTMLButtonElement
+  private timeSliderEl: HTMLInputElement
+  private timeLabelEl: HTMLElement
   private loadingOverlayEl: HTMLElement
   private loadingLabelEl: HTMLElement
   private loadingElapsedEl: HTMLElement
@@ -76,6 +82,7 @@ export class LocalVisionApp {
     this.geoLoader = new BoundaryLoader({ sessionCache: true })
     this.selection = new SelectionStore()
     this.drilldown = new DrilldownStore()
+    this.time = new TimeStore()
 
     const theme = resolveTheme(options.theme)
 
@@ -117,6 +124,49 @@ export class LocalVisionApp {
     this.breadcrumbEl.className = 'lv-breadcrumb'
     this.breadcrumbEl.style.display = 'none' // hidden until a drillProvider is configured
     this.root.appendChild(this.breadcrumbEl)
+
+    // ── Time bar (Bundle 4 — only shown for temporal bindings) ──────────────
+    this.timeBarEl = document.createElement('div')
+    this.timeBarEl.className = 'lv-time-bar'
+    this.timeBarEl.style.display = 'none'
+
+    this.timePlayBtn = document.createElement('button')
+    this.timePlayBtn.className = 'lv-time-play'
+    this.timePlayBtn.type = 'button'
+    this.timePlayBtn.textContent = '⏵'
+    this.timePlayBtn.title = 'Play / pause'
+    this.timePlayBtn.addEventListener('click', () => this.time.toggle())
+
+    const startLabel = document.createElement('span')
+    startLabel.className = 'lv-time-range-label'
+
+    this.timeSliderEl = document.createElement('input')
+    this.timeSliderEl.type = 'range'
+    this.timeSliderEl.className = 'lv-time-slider'
+    this.timeSliderEl.min = '0'
+    this.timeSliderEl.value = '0'
+    this.timeSliderEl.addEventListener('input', () => {
+      this.time.setIndex(parseInt(this.timeSliderEl.value, 10))
+    })
+
+    const endLabel = document.createElement('span')
+    endLabel.className = 'lv-time-range-label'
+
+    this.timeLabelEl = document.createElement('span')
+    this.timeLabelEl.className = 'lv-time-current'
+
+    this.timeBarEl.appendChild(this.timePlayBtn)
+    this.timeBarEl.appendChild(startLabel)
+    this.timeBarEl.appendChild(this.timeSliderEl)
+    this.timeBarEl.appendChild(endLabel)
+    this.timeBarEl.appendChild(this.timeLabelEl)
+    this.root.appendChild(this.timeBarEl)
+
+    this.time.subscribe((state) => {
+      this.renderTimeBar(state, startLabel, endLabel)
+      // Forward to active view (only OuterCityView supports time today)
+      if (state.current != null) this.outerView?.setCurrentTime(state.current)
+    })
 
     // ── Body ─────────────────────────────────────────────────────────────────
     this.bodyEl = document.createElement('div')
@@ -199,6 +249,15 @@ export class LocalVisionApp {
   }
 
   /**
+   * Time store for time-varying data. Subscribe to receive time-change
+   * updates, or call `.setCurrent(time)` / `.play()` / `.pause()` to
+   * navigate or animate programmatically.
+   */
+  get timeStore(): TimeStore {
+    return this.time
+  }
+
+  /**
    * Drill into a feature. Resolves the next level via `options.drillProvider`
    * and updates the active OuterCityView's binding. No-op if no provider is
    * configured, no binding is loaded, or the provider returns null.
@@ -238,6 +297,7 @@ export class LocalVisionApp {
       }
       this.drilldown.push(newLevel, binding)
       this.outerView?.updateBinding(binding)
+      this.syncTimeForBinding(binding)
       this.recordTiming(nextLevel, performance.now() - start)
     } catch (err) {
       console.error('[LocalVision] Drill failed:', err)
@@ -260,6 +320,7 @@ export class LocalVisionApp {
 
   destroy(): void {
     if (this.loadingTimer) clearInterval(this.loadingTimer)
+    this.time.destroy()
     this.destroyActiveView()
     this.root.innerHTML = ''
     this.root.classList.remove('lv-root')
@@ -369,6 +430,7 @@ export class LocalVisionApp {
       }
       this.drilldown.setRoot(newRoot, binding)
       this.outerView?.updateBinding(binding)
+      this.syncTimeForBinding(binding)
       this.recordTiming(level, performance.now() - start)
     } catch (err) {
       console.error('[LocalVision] Level swap failed:', err)
@@ -434,6 +496,9 @@ export class LocalVisionApp {
           ? (c) => this.drillInto(c.id, c.label, c.properties)
           : undefined,
       })
+      // If a time bar is active, push current time to the freshly-mounted view
+      const t = this.time.currentValue()
+      if (t != null) this.outerView.setCurrentTime(t)
       this.forwardListeners(this.outerView)
     }
 
@@ -514,11 +579,58 @@ export class LocalVisionApp {
       }
     this.drilldown.setRoot(root, outerBinding)
     this.breadcrumbEl.style.display = ''
+    this.syncTimeForBinding(outerBinding)
+  }
+
+  /**
+   * Configure the TimeStore + visibility of the time bar based on whether
+   * the active binding has a timeAxis. Called whenever the active binding
+   * changes (initial load, drill, level swap).
+   */
+  private syncTimeForBinding(binding: DataBinding): void {
+    const axis = binding.table.timeAxis
+    if (axis && axis.times.length >= 2) {
+      this.time.setTimes([...axis.times], undefined, axis.label)
+      this.timeBarEl.style.display = ''
+    } else {
+      this.time.setTimes([])
+      this.timeBarEl.style.display = 'none'
+    }
   }
 
   private deriveRootLabel(): string {
     const levelLabel = LEVEL_META[this.outerBoundary]?.label ?? this.outerBoundary
     return levelLabel
+  }
+
+  /**
+   * Update the time bar UI from a TimeStore snapshot:
+   *  - slider min/max/value
+   *  - range labels at each end
+   *  - current-value label
+   *  - play/pause button state
+   */
+  private renderTimeBar(
+    state: TimeState,
+    startLabel: HTMLElement,
+    endLabel: HTMLElement,
+  ): void {
+    if (state.times.length < 2) {
+      this.timeBarEl.style.display = 'none'
+      return
+    }
+    this.timeBarEl.style.display = ''
+
+    this.timeSliderEl.min = '0'
+    this.timeSliderEl.max = String(state.times.length - 1)
+    this.timeSliderEl.value = String(Math.max(0, state.currentIndex))
+
+    startLabel.textContent = String(state.times[0])
+    endLabel.textContent = String(state.times[state.times.length - 1])
+    this.timeLabelEl.textContent = state.current != null ? String(state.current) : ''
+
+    this.timePlayBtn.textContent = state.playing ? '⏸' : '⏵'
+    this.timePlayBtn.title = state.playing ? 'Pause' : 'Play'
   }
 
   /**
