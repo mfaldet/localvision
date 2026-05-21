@@ -679,3 +679,46 @@
   border-color: var(--lv-color-primary) !important;
   color: var(--lv-color-text) !important;
 }
+
+/* ── Loading overlay — error variant (click to dismiss) ─────────────────── */
+
+.lv-loading-overlay.lv-loading-overlay-error {
+  cursor: pointer;
+}
+
+.lv-loading-overlay.lv-loading-overlay-error .lv-loading-card {
+  border-color: #ef4444;
+}
+
+.lv-loading-overlay.lv-loading-overlay-error .lv-loading-spinner {
+  border-top-color: #ef4444;
+  animation: none;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.lv-loading-overlay.lv-loading-overlay-error .lv-loading-label {
+  color: #fca5a5;
+}
+
+.lv-loading-overlay.lv-loading-overlay-error .lv-loading-elapsed {
+  color: #fca5a5;
+  max-width: 360px;
+  word-break: break-word;
+  white-space: normal;
+  text-align: center;
+}
+
+.lv-loading-overlay.lv-loading-overlay-error .lv-loading-progress-track {
+  display: none;
+}
+
+.lv-loading-overlay.lv-loading-overlay-error::after {
+  content: 'click to dismiss';
+  position: absolute;
+  bottom: 16px;
+  font-size: 10px;
+  color: var(--lv-color-text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}

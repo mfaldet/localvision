@@ -676,6 +676,7 @@ export class LocalVisionApp {
     this.updateLoadingOverlay(true, city.displayName, null)
     this.drilldown.setLoading(true)
     const tStart = performance.now()
+    let errored = false
     try {
       // City polygon: pull places-of-state, find by GEOID
       const placesFc = await this.geoLoader.places(city.stateFips)
@@ -698,15 +699,36 @@ export class LocalVisionApp {
       console.log('[LocalVision] selectCity → loadView done in', Math.round(performance.now() - tStart), 'ms')
       this.recordTiming('state', performance.now() - tStart)
     } catch (err) {
+      errored = true
       console.error('[LocalVision] City selection failed:', err)
-      // Surface the error in the overlay so the user sees something
-      this.loadingLabelEl.textContent = `Error loading ${city.displayName}`
-      this.loadingElapsedEl.textContent = String(err instanceof Error ? err.message : err)
+      this.showErrorOverlay(`Error loading ${city.displayName}`, err)
     } finally {
       this.loadingTarget = null
       this.drilldown.setLoading(false)
+      // Only hide the overlay on success. On error the showErrorOverlay
+      // call above keeps it visible with the error text + click-to-dismiss.
+      if (!errored) this.updateLoadingOverlay(false)
+    }
+  }
+
+  /** Sticky error overlay with click-to-dismiss. */
+  private showErrorOverlay(label: string, err: unknown): void {
+    this.loadingOverlayEl.style.display = ''
+    this.loadingOverlayEl.classList.add('lv-loading-overlay-error')
+    this.loadingLabelEl.textContent = label
+    this.loadingElapsedEl.textContent = err instanceof Error ? err.message : String(err)
+    // Stop the elapsed-timer ticker if it's still running
+    if (this.loadingTimer) {
+      clearInterval(this.loadingTimer)
+      this.loadingTimer = null
+    }
+    // Click anywhere on the overlay to dismiss
+    const dismiss = () => {
+      this.loadingOverlayEl.removeEventListener('click', dismiss)
+      this.loadingOverlayEl.classList.remove('lv-loading-overlay-error')
       this.updateLoadingOverlay(false)
     }
+    this.loadingOverlayEl.addEventListener('click', dismiss)
   }
 
   /**
