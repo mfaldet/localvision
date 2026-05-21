@@ -47,6 +47,14 @@ const ACS_LAYER: Record<string, number> = {
 const PAGE_SIZE = 1000
 
 /**
+ * TIGERweb layers that carry a COUNTY field. Layers NOT in this set
+ * (place, cd, sldu, sldl, unsd, scsd, elsd, zcta, state) will reject
+ * queries that request the COUNTY field — Census places, congressional
+ * districts, etc. don't nest into counties.
+ */
+const LAYERS_WITH_COUNTY = new Set<string>(['county', 'cousub', 'tract', 'bg'])
+
+/**
  * Strip the trailing Census LSAD descriptor from a place name. TIGERweb
  * returns names like "Rosemount city", "Bayport CDP", "Centerville township"
  * — fine in raw data, ugly in UI. Removes the suffix and trims whitespace.
@@ -513,7 +521,14 @@ export class BoundaryLoader {
     if (layerId === undefined) throw new Error(`[LocalVision] Unknown TIGERweb layer key: "${layerKey}"`)
 
     const where = `STATE='${fips}'`
-    const fields = ['NAME', 'GEOID', 'STATE', 'COUNTY', ...extraFields]
+    // Only request COUNTY on layers that nest into counties. Places,
+    // congressional districts, legislative districts, school districts,
+    // and ZCTAs do NOT have a COUNTY field — asking for it makes the
+    // TIGERweb query fail with "Failed to execute query".
+    const hasCountyField = LAYERS_WITH_COUNTY.has(layerKey)
+    const fields = hasCountyField
+      ? ['NAME', 'GEOID', 'STATE', 'COUNTY', ...extraFields]
+      : ['NAME', 'GEOID', 'STATE', ...extraFields]
     return this.tigerwebQueryRaw(TIGERWEB_BASE, layerId, where, fields, `tw:${layerKey}:${fips}`)
   }
 
