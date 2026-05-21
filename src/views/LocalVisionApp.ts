@@ -649,6 +649,8 @@ export class LocalVisionApp {
    * polygon, then triggers the initial Outer City load.
    */
   private async selectCity(city: PlaceIndexEntry): Promise<void> {
+    console.log('[LocalVision] selectCity:', city.displayName, city.stateFips, city.geoid)
+
     this.selectedCity = city
     this.selectedCityFeature = null
     this.selectedCityCountyFips = null
@@ -667,8 +669,11 @@ export class LocalVisionApp {
     this.outerBoundary = this.options.defaultOuterBoundary ?? 'state'
     this.innerBoundary = this.options.defaultInnerBoundary ?? 'tract'
 
-    // Fetch the city's polygon (full places-of-state call, cached after first)
-    this.loadingTarget = { level: 'state', label: `${city.displayName}` }
+    // Show the loading overlay IMMEDIATELY, before any await. This is a
+    // belt-and-suspenders direct call — bypasses the drilldown subscription
+    // chain so the user gets feedback even if other handlers misbehave.
+    this.loadingTarget = { level: 'state', label: city.displayName }
+    this.updateLoadingOverlay(true, city.displayName, null)
     this.drilldown.setLoading(true)
     const tStart = performance.now()
     try {
@@ -688,13 +693,19 @@ export class LocalVisionApp {
       )
 
       // Load Outer City via drillProvider
+      console.log('[LocalVision] selectCity → loadView(outer)')
       await this.loadView('outer')
+      console.log('[LocalVision] selectCity → loadView done in', Math.round(performance.now() - tStart), 'ms')
       this.recordTiming('state', performance.now() - tStart)
     } catch (err) {
       console.error('[LocalVision] City selection failed:', err)
+      // Surface the error in the overlay so the user sees something
+      this.loadingLabelEl.textContent = `Error loading ${city.displayName}`
+      this.loadingElapsedEl.textContent = String(err instanceof Error ? err.message : err)
     } finally {
       this.loadingTarget = null
       this.drilldown.setLoading(false)
+      this.updateLoadingOverlay(false)
     }
   }
 
