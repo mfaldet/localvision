@@ -228,7 +228,7 @@ export class BoundaryLoader {
     return this.tigerwebQueryRaw(
       TIGERWEB_BASE,
       layer,
-      '1=1',
+      'OBJECTID>0', // not 1=1 — TIGERweb's WAF rejects tautologies on some layers
       ['NAME', 'GEOID', 'STATE'],
       'tw:state:all',
     )
@@ -244,7 +244,7 @@ export class BoundaryLoader {
     return this.tigerwebQueryRaw(
       TIGERWEB_BASE,
       layer,
-      '1=1',
+      'OBJECTID>0', // not 1=1 — TIGERweb's WAF rejects tautologies on some layers
       ['NAME', 'GEOID', 'STATE', 'COUNTY'],
       'tw:county:all',
     )
@@ -396,7 +396,7 @@ export class BoundaryLoader {
     return this.tigerwebQueryRaw(
       TIGERWEB_BASE,
       this.layers['zcta'],
-      '1=1',
+      'OBJECTID>0', // not 1=1 — TIGERweb's WAF rejects tautologies on some layers
       ['GEOID', 'BASENAME'],
       'tw:zcta:all',
     )
