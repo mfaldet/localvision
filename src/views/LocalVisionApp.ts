@@ -1022,6 +1022,13 @@ export class LocalVisionApp {
     estimateMs?: number | null,
   ): void {
     if (!loading) {
+      // If the overlay is showing an error, leave it alone. Without this
+      // guard, a subsequent drilldown.setLoading(false) fires the
+      // subscription which calls us with loading=false, wiping the error
+      // text before the user can read it.
+      if (this.loadingOverlayEl.classList.contains('lv-loading-overlay-error')) {
+        return
+      }
       this.loadingOverlayEl.style.display = 'none'
       this.loadingStart = null
       this.loadingProgressBarEl.style.width = '0%'
