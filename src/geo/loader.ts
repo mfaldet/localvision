@@ -651,7 +651,11 @@ export class BoundaryLoader {
     outFields: string[],
     cacheKey: string,
     operationLabel: string,
-    chunkSize = 200,
+    // Empirically the WAF rejects state-layer queries whose response is
+    // "large" — 50 IDs consistently passes, 56 consistently fails.
+    // Chunking at 30 keeps every request well under the threshold while
+    // not making the round-trip count silly for layers with many features.
+    chunkSize = 30,
   ): Promise<GeoJsonFeatureCollection> {
     return this.cached(cacheKey, async () => {
       // 1. Probe OBJECTIDs (no geometry — WAF allows this regardless of where shape)
