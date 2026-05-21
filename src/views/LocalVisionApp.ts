@@ -820,6 +820,11 @@ export class LocalVisionApp {
       this.recordTiming(level, performance.now() - start)
     } catch (err) {
       console.error(`[LocalVision] Failed to load ${view} view:`, err)
+      // Re-throw so the caller (e.g. selectCity) can show the error in the
+      // overlay. Previously this catch swallowed everything, which is why
+      // mountView / OuterCityView construction failures looked like "load
+      // finished, nothing rendered" — the load was actually broken.
+      throw err
     } finally {
       this.loadingTarget = null
       this.drilldown.setLoading(false)
