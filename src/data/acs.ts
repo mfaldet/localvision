@@ -10,6 +10,7 @@
  */
 
 import { resolveStateFips, padCountyFips } from '../geo/fips'
+import { safeFetch } from '../geo/loader'
 import { resolveVariable, type VariableMeta } from './variables'
 import type { DataTable, DataRow } from './types'
 
@@ -94,16 +95,12 @@ export class CensusACS {
       return stored
     }
 
-    const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(
-        `[LocalVision] Census ACS request failed: HTTP ${res.status}\n  URL: ${url}`,
-      )
-    }
-
+    const opLabel = `Census ACS ${year} ${params.geography.level}` +
+      (params.geography.state ? ` (state ${params.geography.state})` : '')
+    const res = await safeFetch(url, opLabel)
     const raw = (await res.json()) as string[][]
     if (!Array.isArray(raw) || raw.length < 1) {
-      throw new Error('[LocalVision] Census ACS returned unexpected response shape.')
+      throw new Error(`[LocalVision] ${opLabel} — unexpected response shape\n  URL: ${url}`)
     }
 
     const table = this.parseResponse(raw, fetchable, params.geography, year)

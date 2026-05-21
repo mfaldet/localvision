@@ -55,6 +55,71 @@ const PAGE_SIZE = 1000
 const LAYERS_WITH_COUNTY = new Set<string>(['county', 'cousub', 'tract', 'bg'])
 
 /**
+ * TIGERweb is fronted by an F5 BIG-IP WAF that rejects "range" where
+ * clauses (1=1, OBJECTID>0, STATE>'0', etc.) combined with
+ * returnGeometry=true on certain layers — notably states. The HTML
+ * response says "Request Rejected" with a support ID.
+ *
+ * Workaround: probe OBJECTIDs first (no geometry, allowed), then fetch
+ * geometry via `OBJECTID IN (...)` which the WAF allows because it's
+ * a specific-value match. This set lists the layers that need this
+ * treatment when fetched in their entirety.
+ */
+const LAYERS_NEED_ID_ENUMERATION = new Set<string>(['state', 'county-all', 'zcta'])
+
+/**
+ * Wraps fetch() with always-useful error messages. Three layers of detection:
+ *
+ *  1. fetch() rejection (network / CORS / abort): surfaces the URL +
+ *     operation label + original cause. Browser fetch errors are otherwise
+ *     opaque ("Load failed" in Safari, "Failed to fetch" in Chrome).
+ *  2. HTTP error status: surfaces method, status, URL.
+ *  3. WAF rejection (HTML "Request Rejected" page returned with HTTP 200):
+ *     surfaces a specific diagnostic + the support ID so the user can
+ *     report it upstream.
+ */
+export async function safeFetch(url: string, operation: string): Promise<Response> {
+  let res: Response
+  try {
+    res = await fetch(url)
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `[LocalVision] ${operation} — network error\n` +
+        `  Cause: ${cause}\n` +
+        `  URL:   ${url}\n` +
+        `  Hint:  open the URL directly in another tab to confirm it works.`,
+    )
+  }
+  if (!res.ok) {
+    throw new Error(
+      `[LocalVision] ${operation} — HTTP ${res.status} ${res.statusText}\n  URL: ${url}`,
+    )
+  }
+  // Some APIs return HTTP 200 with an HTML error body when blocked by a
+  // WAF or load balancer. Sniff the content-type and the start of the
+  // body to detect this case.
+  const contentType = res.headers.get('content-type') ?? ''
+  if (contentType.includes('text/html')) {
+    const body = await res.clone().text()
+    const supportIdMatch = body.match(/support ID is:\s*(\d+)/i)
+    if (body.includes('Request Rejected') || supportIdMatch) {
+      throw new Error(
+        `[LocalVision] ${operation} — request rejected by upstream WAF\n` +
+          `  URL: ${url}\n` +
+          `  ${supportIdMatch ? `Support ID: ${supportIdMatch[1]}` : ''}\n` +
+          `  Hint:  the WHERE clause may be triggering a SQL-injection filter; ` +
+          `try a specific-value match instead of a range.`,
+      )
+    }
+    throw new Error(
+      `[LocalVision] ${operation} — expected JSON but got HTML\n  URL: ${url}\n  Body starts: ${body.slice(0, 200)}`,
+    )
+  }
+  return res
+}
+
+/**
  * Strip the trailing Census LSAD descriptor from a place name. TIGERweb
  * returns names like "Rosemount city", "Bayport CDP", "Centerville township"
  * — fine in raw data, ugly in UI. Removes the suffix and trims whitespace.
@@ -224,13 +289,12 @@ export class BoundaryLoader {
 
   /** All 50 states + DC + territories. */
   states(): Promise<GeoJsonFeatureCollection> {
-    const layer = this.layers['state']
-    return this.tigerwebQueryRaw(
+    return this.tigerwebQueryByIdEnumeration(
       TIGERWEB_BASE,
-      layer,
-      'OBJECTID>0', // not 1=1 — TIGERweb's WAF rejects tautologies on some layers
+      this.layers['state'],
       ['NAME', 'GEOID', 'STATE'],
       'tw:state:all',
+      'TIGERweb states (layer 76)',
     )
   }
 
@@ -325,18 +389,15 @@ export class BoundaryLoader {
         resultRecordCount: String(PAGE_SIZE),
       })
       const url = `${TIGERWEB_BASE}/${layerId}/query?${params.toString()}`
-      const res = await fetch(url)
-      if (!res.ok) {
-        throw new Error(
-          `[LocalVision] Places index fetch failed: HTTP ${res.status} (state ${stateFips})`,
-        )
-      }
+      const res = await safeFetch(url, `Places index for state ${stateFips} (offset ${offset})`)
       const page = (await res.json()) as {
         features?: { properties?: Record<string, unknown> }[]
         error?: { message?: string }
       }
       if (page.error) {
-        throw new Error(`[LocalVision] TIGERweb error: ${page.error.message}`)
+        throw new Error(
+          `[LocalVision] Places index for state ${stateFips} returned error: ${page.error.message}\n  URL: ${url}`,
+        )
       }
       const feats = page.features ?? []
       for (const f of feats) {
@@ -558,18 +619,13 @@ export class BoundaryLoader {
         })
 
         const url = `${serviceBase}/${layerId}/query?${params.toString()}`
-        const res = await fetch(url)
-
-        if (!res.ok) {
-          throw new Error(
-            `[LocalVision] TIGERweb request failed: HTTP ${res.status}\n  Layer: ${layerId}, where: ${where}`,
-          )
-        }
+        const res = await safeFetch(url, `TIGERweb layer ${layerId} where=${where}`)
 
         const page = await res.json() as GeoJsonFeatureCollection & { error?: { message: string } }
-
         if ('error' in page && page.error) {
-          throw new Error(`[LocalVision] TIGERweb error: ${page.error.message}\n  Layer: ${layerId}`)
+          throw new Error(
+            `[LocalVision] TIGERweb returned error: ${page.error.message}\n  Layer: ${layerId}\n  URL: ${url}`,
+          )
         }
 
         const pageFeatures = page.features ?? []
@@ -577,6 +633,57 @@ export class BoundaryLoader {
 
         keepGoing = pageFeatures.length === PAGE_SIZE
         offset += PAGE_SIZE
+      }
+
+      return { type: 'FeatureCollection', features }
+    })
+  }
+
+  /**
+   * Fetch a whole layer's features by enumerating OBJECTIDs and querying
+   * geometry in chunks. Workaround for TIGERweb WAF rules that reject
+   * range-style where clauses combined with returnGeometry=true on certain
+   * layers (states, ZCTAs nationwide).
+   */
+  private async tigerwebQueryByIdEnumeration(
+    serviceBase: string,
+    layerId: number,
+    outFields: string[],
+    cacheKey: string,
+    operationLabel: string,
+    chunkSize = 200,
+  ): Promise<GeoJsonFeatureCollection> {
+    return this.cached(cacheKey, async () => {
+      // 1. Probe OBJECTIDs (no geometry — WAF allows this regardless of where shape)
+      const idsUrl = `${serviceBase}/${layerId}/query?where=OBJECTID%3E0&returnIdsOnly=true&f=json`
+      const idsRes = await safeFetch(idsUrl, `${operationLabel} — OBJECTID probe`)
+      const idsBody = (await idsRes.json()) as { objectIds?: number[]; error?: { message: string } }
+      if (idsBody.error) {
+        throw new Error(`[LocalVision] ${operationLabel} probe returned error: ${idsBody.error.message}\n  URL: ${idsUrl}`)
+      }
+      const ids = idsBody.objectIds ?? []
+      if (ids.length === 0) {
+        throw new Error(`[LocalVision] ${operationLabel} — no OBJECTIDs found\n  URL: ${idsUrl}`)
+      }
+
+      // 2. Fetch geometry in chunks via specific-value `OBJECTID IN (...)` matches
+      const features: GeoJsonFeature[] = []
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize)
+        const params = new URLSearchParams({
+          where: `OBJECTID IN (${chunk.join(',')})`,
+          outFields: outFields.join(','),
+          returnGeometry: 'true',
+          outSR: '4326',
+          f: 'geojson',
+        })
+        const url = `${serviceBase}/${layerId}/query?${params.toString()}`
+        const res = await safeFetch(url, `${operationLabel} — chunk ${i + 1}-${Math.min(i + chunkSize, ids.length)} of ${ids.length}`)
+        const page = (await res.json()) as GeoJsonFeatureCollection & { error?: { message: string } }
+        if (page.error) {
+          throw new Error(`[LocalVision] ${operationLabel} chunk returned error: ${page.error.message}\n  URL: ${url}`)
+        }
+        features.push(...(page.features ?? []))
       }
 
       return { type: 'FeatureCollection', features }
