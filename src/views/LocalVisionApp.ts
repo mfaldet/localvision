@@ -29,7 +29,10 @@ import '../theme/styles.css'
 
 // ─── Level option lists (ordered for readability) ─────────────────────────────
 
-const OUTER_LEVELS: OuterLevel[] = ['state', 'county', 'place', 'cousub']
+// 'state' deliberately omitted — when a city is selected we stay scoped
+// to that city's state. Nation-wide state comparison is out of scope and
+// also trips the TIGERweb WAF on large geometry payloads.
+const OUTER_LEVELS: OuterLevel[] = ['county', 'place', 'cousub']
 
 const INNER_LEVELS: InnerLevel[] = [
   'tract', 'bg', 'place', 'cousub', 'zcta',
@@ -94,7 +97,8 @@ export class LocalVisionApp {
 
   constructor(options: LocalVisionAppOptions) {
     this.options = options
-    this.activeView = options.defaultView ?? 'outer'
+    // Default to Inner City — the primary "see your city's dynamics" view
+    this.activeView = options.defaultView ?? 'inner'
     this.innerBoundary = options.defaultInnerBoundary ?? 'tract'
     this.outerBoundary = options.defaultOuterBoundary ?? 'county'
     this.geoLoader = new BoundaryLoader({ sessionCache: true })
@@ -516,8 +520,8 @@ export class LocalVisionApp {
     this.cityToggleContainerEl.innerHTML = ''
 
     const modes: { id: ViewMode; label: string }[] = [
-      { id: 'outer', label: 'Outer City' },
       { id: 'inner', label: 'Inner City' },
+      { id: 'outer', label: 'Outer City' },
     ]
 
     for (const { id, label } of modes) {
@@ -665,8 +669,8 @@ export class LocalVisionApp {
 
     // Reset state for the new city
     this.loadedViews.clear()
-    this.activeView = 'outer'
-    this.outerBoundary = this.options.defaultOuterBoundary ?? 'state'
+    this.activeView = 'inner'
+    this.outerBoundary = this.options.defaultOuterBoundary ?? 'county'
     this.innerBoundary = this.options.defaultInnerBoundary ?? 'tract'
 
     // Show the loading overlay IMMEDIATELY, before any await. This is a
@@ -693,9 +697,10 @@ export class LocalVisionApp {
         this.selectedCityFeature,
       )
 
-      // Load Outer City via drillProvider
-      console.log('[LocalVision] selectCity → loadView(outer)')
-      await this.loadView('outer')
+      // Load Inner City first (default view) — shows city's containing
+      // county's tracts. Outer City lazy-loads when the user toggles to it.
+      console.log('[LocalVision] selectCity → loadView(inner)')
+      await this.loadView('inner')
       console.log('[LocalVision] selectCity → loadView done in', Math.round(performance.now() - tStart), 'ms')
       this.recordTiming('state', performance.now() - tStart)
     } catch (err) {

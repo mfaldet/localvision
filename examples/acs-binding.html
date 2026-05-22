@@ -104,16 +104,19 @@
       // for the default level (State) and the view boots up.
       const app = new LocalVisionApp({
         container: '#app',
-        defaultView: 'outer',
-        defaultOuterBoundary: 'state',  // start zoomed-out
+        // Inner City is the default — see the chosen city's tracts up close
+        defaultView: 'inner',
+        // Comparison level for Outer City — peer counties in the same state
+        defaultOuterBoundary: 'county',
         defaultInnerBoundary: 'tract',
         drillProvider: async ({ level, parent, context }) => {
           console.log(`[drill] → ${level} for ${parent.label}`)
           const stateFips = context.stateFips ?? '27'
 
+          // Note: 'state' is no longer an Outer level. Every fetch is
+          // scoped to the selected city's state.
           let boundariesPromise
           switch (level) {
-            case 'state':  boundariesPromise = loader.states(); break
             case 'county': boundariesPromise = loader.counties(stateFips); break
             case 'place':  boundariesPromise = loader.places(stateFips); break
             case 'cousub': boundariesPromise = loader.countySubdivisions(stateFips); break
@@ -124,16 +127,11 @@
               return null
           }
 
-          // Omit `state` entirely at state-level so ACS issues `for=state:*`
-          // and returns all 50 states. Passing `state: '*'` would route
-          // through resolveStateFips and throw.
-          const geoForAcs = level === 'state'
-            ? { level }
-            : { state: stateFips, level, county: context.countyFips }
-
+          // Every ACS fetch is scoped to the selected city's state.
+          // tract / bg additionally narrow to the city's containing county.
           const tablePromise = acs.fetchTemporal({
             variables: VARIABLES,
-            geography: geoForAcs,
+            geography: { state: stateFips, level, county: context.countyFips },
             years: YEARS,
           })
 
