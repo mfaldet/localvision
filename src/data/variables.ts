@@ -45,7 +45,21 @@ export interface VariableMeta {
   unavailable?: boolean
   /** External data source recommendation when ACS doesn't cover this. */
   externalSource?: string
+  /**
+   * Geographic levels at which this variable has data. The KPI picker only
+   * shows variables whose `availableAtLevels` includes the active boundary
+   * level — so, e.g., a metric that only exists at county granularity won't
+   * be offered when you're looking at census tracts.
+   *
+   * When undefined, treated as "available at every level". All ACS detailed-
+   * table variables in the curated catalog are available at the standard
+   * ADM levels (state through block group + place, cousub).
+   */
+  availableAtLevels?: string[]
 }
+
+/** All ACS detailed-table levels — the default for curated ACS variables. */
+const ALL_ACS_LEVELS = ['state', 'county', 'place', 'cousub', 'tract', 'bg']
 
 // ─── Variable catalog ─────────────────────────────────────────────────────────
 
@@ -192,6 +206,14 @@ export const CENSUS_VARIABLES: Record<string, VariableMeta> = {
   },
 }
 
+// Default ACS detailed-table variables to all standard ADM levels when the
+// entry doesn't override. Stub entries (unavailable: true) keep their empty
+// default so they're never offered as a level-compatible metric.
+for (const v of Object.values(CENSUS_VARIABLES)) {
+  if (v.availableAtLevels) continue
+  v.availableAtLevels = v.unavailable ? [] : [...ALL_ACS_LEVELS]
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -222,6 +244,16 @@ export function resolveVariable(input: string): VariableMeta {
   throw new Error(
     `[LocalVision] Unknown variable: "${input}". Must be a catalog key or a raw ACS code like 'B19013_001E'.`,
   )
+}
+
+/**
+ * True when `v` has data at geographic `level`. If the variable's
+ * `availableAtLevels` is unset, treats it as universally available.
+ */
+export function isVariableAvailableAtLevel(v: VariableMeta, level?: string): boolean {
+  if (!level) return true
+  if (!v.availableAtLevels) return true
+  return v.availableAtLevels.includes(level)
 }
 
 /** Return all catalog entries for a given category. */

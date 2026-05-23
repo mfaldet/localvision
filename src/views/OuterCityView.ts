@@ -184,9 +184,25 @@ export class OuterCityView {
     this.kpiDefs = new Map(kpiDefs.map((k) => [k.id, k]))
 
     // Fall back to first available KPI if the previous active one is gone
-    if (!this.kpiDefs.has(this.activeKpi)) {
-      const first = [...this.kpiDefs.keys()][0]
-      if (first) this.activeKpi = first
+    // OR is no longer available at the new boundary level.
+    const newLevel = binding.table.meta?.geographyLevel
+    const activeDef = this.kpiDefs.get(this.activeKpi)
+    const activeStillOk =
+      !!activeDef &&
+      (!newLevel ||
+        !activeDef.availableAtLevels ||
+        activeDef.availableAtLevels.length === 0 ||
+        activeDef.availableAtLevels.includes(newLevel))
+    if (!activeStillOk) {
+      // Pick first KPI compatible with the new level
+      const compatible = [...this.kpiDefs.values()].find(
+        (d) =>
+          !newLevel ||
+          !d.availableAtLevels ||
+          d.availableAtLevels.length === 0 ||
+          d.availableAtLevels.includes(newLevel),
+      )
+      if (compatible) this.activeKpi = compatible.id
     }
 
     this.selection.clear()
@@ -511,7 +527,16 @@ export class OuterCityView {
 
   private renderKpiSelector(): void {
     this.kpiSelectorEl.innerHTML = ''
+    const level = this.activeBinding?.table.meta?.geographyLevel
     this.kpiDefs.forEach((def) => {
+      // Filter KPIs to those declared as available at the current boundary
+      // level. Undefined / empty `availableAtLevels` means universal.
+      const ok =
+        !level ||
+        !def.availableAtLevels ||
+        def.availableAtLevels.length === 0 ||
+        def.availableAtLevels.includes(level)
+      if (!ok) return
       const pill = document.createElement('button')
       pill.className = `lv-kpi-pill${def.id === this.activeKpi ? ' lv-active' : ''}`
       pill.textContent = def.label
@@ -652,7 +677,7 @@ export class OuterCityView {
     const plot = Plot.plot({
       width: width - 48,
       height,
-      marginLeft: 100,
+      marginLeft: 140, // wide enough for "Dakota County", "Saint Louis County", etc.
       marginRight: 16,
       marginTop: 8,
       marginBottom: 36,
@@ -976,5 +1001,6 @@ function bindingToKpiDefs(binding: DataBinding): KpiDefinition[] {
     label: v.label,
     format: v.format,
     unit: v.unit,
+    availableAtLevels: v.availableAtLevels,
   }))
 }

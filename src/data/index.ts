@@ -3,6 +3,7 @@ export {
   CATEGORIES,
   resolveVariable,
   variablesByCategory,
+  isVariableAvailableAtLevel,
 } from './variables'
 export type { VariableMeta, VariableCategory } from './variables'
 

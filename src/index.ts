@@ -85,6 +85,7 @@ export {
   bindDataToBoundaries,
   stripAcsGeoIdPrefix,
   cleanCommunityName,
+  isVariableAvailableAtLevel,
   parseCsv,
   loadCsv,
 } from './data/index'

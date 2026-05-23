@@ -34,10 +34,12 @@ import '../theme/styles.css'
 // also trips the TIGERweb WAF on large geometry payloads.
 const OUTER_LEVELS: OuterLevel[] = ['county', 'place', 'cousub']
 
-const INNER_LEVELS: InnerLevel[] = [
-  'tract', 'bg', 'place', 'cousub', 'zcta',
-  'cd', 'unsd', 'elsd', 'scsd', 'sldl', 'sldu',
-]
+// Levels supported by the city-first demo's drillProvider AND with ACS
+// support in the data layer. School / legislative / congressional districts
+// + ZCTAs are valid Census levels but need ACS-level wiring on the data
+// side before they can be exposed here — picking them today would return
+// null from the provider and silently no-op.
+const INNER_LEVELS: InnerLevel[] = ['tract', 'bg', 'place', 'cousub']
 
 // ─── LocalVisionApp ───────────────────────────────────────────────────────────
 
@@ -450,13 +452,21 @@ export class LocalVisionApp {
       }
       this.emit('boundaryChange', { boundary, view: this.activeView })
 
-      // Full data swap when a drillProvider is configured + outer view active.
-      // Otherwise fall back to the legacy overlay-only fetch.
+      // City-first mode (a city is selected): reload the active view with the
+      // new boundary level. loadView respects the city context (state +
+      // containing county) so inner views stay scoped to the city's tracts /
+      // block groups rather than going state-wide.
+      if (this.selectedCity && this.options.drillProvider) {
+        void this.loadView(this.activeView)
+        return
+      }
+      // Legacy mode: pre-city-first state-rooted outer view, drillProvider set
       if (this.options.drillProvider && this.activeView === 'outer') {
         void this.swapToLevel(boundary as OuterLevel)
-      } else {
-        void this.fetchAndApplyBoundary(boundary, this.activeView)
+        return
       }
+      // No drillProvider — fall back to legacy overlay-only fetch
+      void this.fetchAndApplyBoundary(boundary, this.activeView)
     })
 
     return sel

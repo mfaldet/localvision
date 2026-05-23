@@ -211,6 +211,12 @@ export interface KpiDefinition {
   format?: KpiFormat
   unit?: string
   colorScale?: string[]
+  /**
+   * Geographic levels where this KPI has data. Used by views to filter the
+   * KPI picker — e.g. don't offer a county-only metric when looking at
+   * census tracts. Undefined / empty = available at every level.
+   */
+  availableAtLevels?: string[]
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
