@@ -17,6 +17,42 @@ import '../theme/styles.css'
 const COMMUNITIES_SOURCE = 'lv-communities'
 const CHOROPLETH_FILL = 'lv-choropleth-fill'
 const CHOROPLETH_LINE = 'lv-choropleth-line'
+
+/**
+ * Sequential / diverging color palettes for the choropleth fill. Ordered
+ * from low → high so the interpolator hands low metric values the first
+ * color and high values the last.
+ */
+export const COLOR_SCHEMES: Record<string, string[]> = {
+  default: ['#1e3a5f', '#2563eb', '#60a5fa', '#bfdbfe', '#ecfdf5', '#6ee7b7', '#10b981', '#065f46'],
+  blues:   ['#f0f9ff', '#bae6fd', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0369a1', '#0c4a6e'],
+  viridis: ['#440154', '#3b528b', '#21908c', '#5dc863', '#fde725'],
+  magma:   ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'],
+  redblue: ['#67001f', '#d6604d', '#fddbc7', '#f7f7f7', '#d1e5f0', '#4393c3', '#053061'],
+}
+
+export type ColorSchemeName = keyof typeof COLOR_SCHEMES
+
+/** Style options controllable from the display-settings panel. */
+export interface ChoroplethStyleConfig {
+  scheme: ColorSchemeName
+  /** Base fill opacity (0..1). Hover state adds +0.2, capped at 1. */
+  fillOpacity: number
+  /**
+   * Boundary line color. Pass `'auto'` to use the active theme's
+   * background color (high contrast against the choropleth fills).
+   */
+  lineColor: 'auto' | string
+  /** Boundary line width in CSS px (0 hides outlines). */
+  lineWidth: number
+}
+
+const DEFAULT_STYLE_CONFIG: ChoroplethStyleConfig = {
+  scheme: 'default',
+  fillOpacity: 0.65,
+  lineColor: 'auto',
+  lineWidth: 1,
+}
 const SELECTED_FILL = 'lv-selected-fill'
 
 export class OuterCityView {
@@ -37,6 +73,7 @@ export class OuterCityView {
   private onDrillRequest?: (c: { id: string; label: string; properties: Record<string, unknown> }) => void
   private activeBinding: DataBinding | null = null
   private currentTime: string | number | null = null
+  private styleConfig: ChoroplethStyleConfig = { ...DEFAULT_STYLE_CONFIG }
   private drillButtonLabel?: string
   private listeners: Partial<{ [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[] }> = {}
   private resizeObserver: ResizeObserver
@@ -256,6 +293,26 @@ export class OuterCityView {
   }
 
   /**
+   * Update the choropleth's visual style (fill color scheme + opacity,
+   * boundary line color + width). Only the keys present in `opts` are
+   * changed; everything else keeps its current value. Idempotent: safe to
+   * call before the map style has loaded — settings apply on load.
+   */
+  setStyle(opts: Partial<ChoroplethStyleConfig>): void {
+    this.styleConfig = { ...this.styleConfig, ...opts }
+    if (this.map.isStyleLoaded()) {
+      this.applyStyleConfig()
+    } else {
+      this.map.once('load', () => this.applyStyleConfig())
+    }
+  }
+
+  /** Read the current style config (useful for restoring settings panels). */
+  getStyle(): ChoroplethStyleConfig {
+    return { ...this.styleConfig }
+  }
+
+  /**
    * Add or replace a "city focus" overlay — the chosen city's polygon drawn
    * as a bold red outline on top of everything. Always visible regardless
    * of the active boundary level. Pass null to clear.
@@ -362,6 +419,35 @@ export class OuterCityView {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
+  /** Hover lifts opacity by +0.2 over the base, clamped to 1. */
+  private fillOpacityExpression(): maplibregl.ExpressionSpecification {
+    const base = this.styleConfig.fillOpacity
+    const hover = Math.min(1, base + 0.2)
+    return ['case', ['boolean', ['feature-state', 'hover'], false], hover, base] as unknown as maplibregl.ExpressionSpecification
+  }
+
+  /** Resolve the 'auto' line-color sentinel against the active theme. */
+  private resolveLineColor(): string {
+    return this.styleConfig.lineColor === 'auto'
+      ? this.theme.colorBackground
+      : this.styleConfig.lineColor
+  }
+
+  /**
+   * Push the current styleConfig into the live MapLibre layers. Safe to
+   * call when layers aren't yet created — it's a no-op in that case.
+   */
+  private applyStyleConfig(): void {
+    if (this.map.getLayer(CHOROPLETH_FILL)) {
+      this.map.setPaintProperty(CHOROPLETH_FILL, 'fill-color', this.buildColorExpression())
+      this.map.setPaintProperty(CHOROPLETH_FILL, 'fill-opacity', this.fillOpacityExpression())
+    }
+    if (this.map.getLayer(CHOROPLETH_LINE)) {
+      this.map.setPaintProperty(CHOROPLETH_LINE, 'line-color', this.resolveLineColor())
+      this.map.setPaintProperty(CHOROPLETH_LINE, 'line-width', this.styleConfig.lineWidth)
+    }
+  }
+
   private buildMergedGeoJson() {
     const features: unknown[] = []
     this.communityFids.clear()
@@ -388,14 +474,14 @@ export class OuterCityView {
       data: this.buildMergedGeoJson() as GeoJSON.FeatureCollection,
     })
 
-    // Choropleth fill — color driven by active KPI
+    // Choropleth fill — color driven by active KPI + user-selected scheme
     this.map.addLayer({
       id: CHOROPLETH_FILL,
       type: 'fill',
       source: COMMUNITIES_SOURCE,
       paint: {
         'fill-color': this.buildColorExpression(),
-        'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0.65],
+        'fill-opacity': this.fillOpacityExpression(),
       },
     })
 
@@ -414,8 +500,8 @@ export class OuterCityView {
       type: 'line',
       source: COMMUNITIES_SOURCE,
       paint: {
-        'line-color': this.theme.colorBackground,
-        'line-width': 1,
+        'line-color': this.resolveLineColor(),
+        'line-width': this.styleConfig.lineWidth,
         'line-opacity': 0.8,
       },
     })
@@ -484,9 +570,11 @@ export class OuterCityView {
 
   private buildColorExpression(): maplibregl.ExpressionSpecification {
     const kpiDef = this.kpiDefs.get(this.activeKpi)
-    const palette = kpiDef?.colorScale ?? [
-      '#1e3a5f', '#2563eb', '#60a5fa', '#bfdbfe', '#ecfdf5', '#6ee7b7', '#10b981', '#065f46',
-    ]
+    // Per-KPI override wins; otherwise use the user-selected scheme; otherwise default.
+    const palette =
+      kpiDef?.colorScale ??
+      COLOR_SCHEMES[this.styleConfig.scheme] ??
+      COLOR_SCHEMES.default
     const values = this.communities.map((c) => c.kpis[this.activeKpi] ?? 0)
     const min = Math.min(...values)
     const max = Math.max(...values)

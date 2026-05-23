@@ -49,6 +49,8 @@ export class LocalVisionApp {
   private dividerEl: HTMLElement
   private kpiSlotEl: HTMLElement
   private boundarySelectEl: HTMLSelectElement
+  private settingsBtn!: HTMLButtonElement
+  private settingsPanelEl!: HTMLElement
   private bodyEl: HTMLElement
 
   private activeView: ViewMode
@@ -153,7 +155,21 @@ export class LocalVisionApp {
     this.kpiSlotEl.style.display = 'none'
     this.headerEl.appendChild(this.kpiSlotEl)
 
+    // 6. Display-settings gear (far right) — toggles the settings panel
+    this.settingsBtn = document.createElement('button')
+    this.settingsBtn.className = 'lv-settings-btn'
+    this.settingsBtn.title = 'Display settings'
+    this.settingsBtn.textContent = '⚙'
+    this.settingsBtn.style.display = 'none' // shown once a city is loaded
+    this.settingsBtn.addEventListener('click', () => this.toggleSettingsPanel())
+    this.headerEl.appendChild(this.settingsBtn)
+
     this.root.appendChild(this.headerEl)
+
+    // Settings panel — absolute-positioned popover anchored to header right
+    this.settingsPanelEl = this.buildSettingsPanel()
+    this.settingsPanelEl.style.display = 'none'
+    this.root.appendChild(this.settingsPanelEl)
 
     // ── Breadcrumb (drill-down navigation) ──────────────────────────────────
     this.breadcrumbEl = document.createElement('div')
@@ -682,6 +698,7 @@ export class LocalVisionApp {
     this.emptyStateEl.style.display = 'none'
     this.cityToggleContainerEl.style.display = ''
     this.boundarySelectEl.style.display = ''
+    this.settingsBtn.style.display = ''
 
     // Reset state for the new city
     this.loadedViews.clear()
@@ -1156,6 +1173,142 @@ function nextDrillLevel(
     case 'county': return 'tract'
     case 'tract':  return 'bg'
     default:       return null
+  }
+
+  // ── Display settings panel ──────────────────────────────────────────────────
+
+  private toggleSettingsPanel(): void {
+    const open = this.settingsPanelEl.style.display !== 'none'
+    this.settingsPanelEl.style.display = open ? 'none' : ''
+    this.settingsBtn.classList.toggle('lv-active', !open)
+  }
+
+  /**
+   * Build the settings popover. Sections: color scheme, fill opacity,
+   * boundary color, boundary width. Each control writes through
+   * `outerView.setStyle(...)`. Settings persist within the session
+   * (not yet across reloads).
+   */
+  private buildSettingsPanel(): HTMLElement {
+    const panel = document.createElement('div')
+    panel.className = 'lv-settings-panel'
+
+    const header = document.createElement('div')
+    header.className = 'lv-settings-header'
+    header.textContent = 'Display settings'
+    panel.appendChild(header)
+
+    // 1. Color scheme
+    const schemeSection = section('Color scheme')
+    const schemeRow = document.createElement('div')
+    schemeRow.className = 'lv-scheme-row'
+    const schemes: { key: string; label: string; palette: string[] }[] = [
+      { key: 'default', label: 'Blue → Green',     palette: ['#1e3a5f', '#bfdbfe', '#10b981'] },
+      { key: 'blues',   label: 'Sequential Blues', palette: ['#f0f9ff', '#38bdf8', '#0c4a6e'] },
+      { key: 'viridis', label: 'Viridis',          palette: ['#440154', '#21908c', '#fde725'] },
+      { key: 'magma',   label: 'Magma',            palette: ['#000004', '#b73779', '#fcfdbf'] },
+      { key: 'redblue', label: 'Red ↔ Blue',       palette: ['#67001f', '#f7f7f7', '#053061'] },
+    ]
+    schemes.forEach((s) => {
+      const btn = document.createElement('button')
+      btn.className = 'lv-scheme-swatch'
+      btn.title = s.label
+      btn.dataset['scheme'] = s.key
+      btn.style.background = `linear-gradient(to right, ${s.palette[0]}, ${s.palette[1]}, ${s.palette[2]})`
+      if (s.key === 'default') btn.classList.add('lv-active')
+      btn.addEventListener('click', () => {
+        schemeRow.querySelectorAll('.lv-scheme-swatch').forEach((b) => b.classList.remove('lv-active'))
+        btn.classList.add('lv-active')
+        this.outerView?.setStyle({ scheme: s.key as never })
+      })
+      schemeRow.appendChild(btn)
+    })
+    schemeSection.appendChild(schemeRow)
+    panel.appendChild(schemeSection)
+
+    // 2. Fill opacity
+    const opSection = section('Fill opacity')
+    const opRow = document.createElement('div')
+    opRow.className = 'lv-settings-control-row'
+    const opSlider = slider(0, 100, 65, 1)
+    const opLabel = document.createElement('span')
+    opLabel.className = 'lv-settings-value'
+    opLabel.textContent = '65%'
+    opSlider.addEventListener('input', () => {
+      const v = parseInt(opSlider.value, 10)
+      opLabel.textContent = `${v}%`
+      this.outerView?.setStyle({ fillOpacity: v / 100 })
+    })
+    opRow.appendChild(opSlider)
+    opRow.appendChild(opLabel)
+    opSection.appendChild(opRow)
+    panel.appendChild(opSection)
+
+    // 3. Boundary color
+    const lcSection = section('Boundary color')
+    const lcRow = document.createElement('div')
+    lcRow.className = 'lv-line-color-row'
+    const lineColorPresets: { key: string; label: string; swatch: string }[] = [
+      { key: 'auto',    label: 'Auto (bg)', swatch: '#0F1117' },
+      { key: '#ffffff', label: 'White',     swatch: '#ffffff' },
+      { key: '#000000', label: 'Black',     swatch: '#000000' },
+      { key: '#fbbf24', label: 'Amber',     swatch: '#fbbf24' },
+    ]
+    lineColorPresets.forEach((p, i) => {
+      const btn = document.createElement('button')
+      btn.className = 'lv-line-color-swatch'
+      btn.title = p.label
+      btn.dataset['lineColor'] = p.key
+      btn.style.background = p.swatch
+      if (i === 0) btn.classList.add('lv-active')
+      btn.addEventListener('click', () => {
+        lcRow.querySelectorAll('.lv-line-color-swatch').forEach((b) => b.classList.remove('lv-active'))
+        btn.classList.add('lv-active')
+        this.outerView?.setStyle({ lineColor: p.key as never })
+      })
+      lcRow.appendChild(btn)
+    })
+    lcSection.appendChild(lcRow)
+    panel.appendChild(lcSection)
+
+    // 4. Boundary width
+    const lwSection = section('Boundary width')
+    const lwRow = document.createElement('div')
+    lwRow.className = 'lv-settings-control-row'
+    const lwSlider = slider(0, 4, 1, 0.5)
+    const lwLabel = document.createElement('span')
+    lwLabel.className = 'lv-settings-value'
+    lwLabel.textContent = '1.0 px'
+    lwSlider.addEventListener('input', () => {
+      const v = parseFloat(lwSlider.value)
+      lwLabel.textContent = `${v.toFixed(1)} px`
+      this.outerView?.setStyle({ lineWidth: v })
+    })
+    lwRow.appendChild(lwSlider)
+    lwRow.appendChild(lwLabel)
+    lwSection.appendChild(lwRow)
+    panel.appendChild(lwSection)
+
+    return panel
+
+    function section(label: string): HTMLElement {
+      const s = document.createElement('div')
+      s.className = 'lv-settings-section'
+      const l = document.createElement('label')
+      l.textContent = label
+      s.appendChild(l)
+      return s
+    }
+    function slider(min: number, max: number, value: number, step: number): HTMLInputElement {
+      const r = document.createElement('input')
+      r.type = 'range'
+      r.className = 'lv-settings-slider'
+      r.min = String(min)
+      r.max = String(max)
+      r.value = String(value)
+      r.step = String(step)
+      return r
+    }
   }
 }
 

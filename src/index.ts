@@ -1,5 +1,6 @@
 export { InnerCityView } from './views/InnerCityView'
-export { OuterCityView } from './views/OuterCityView'
+export { OuterCityView, COLOR_SCHEMES } from './views/OuterCityView'
+export type { ChoroplethStyleConfig, ColorSchemeName } from './views/OuterCityView'
 export { LocalVisionApp } from './views/LocalVisionApp'
 
 export type {
