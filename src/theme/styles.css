@@ -403,6 +403,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+.lv-loading-hint {
+  font-size: 10px;
+  color: var(--lv-color-text-muted);
+  opacity: 0.7;
+  margin-top: 4px;
+  text-align: center;
+  max-width: 260px;
+}
+
 @keyframes lv-spin { to { transform: rotate(360deg); } }
 @keyframes lv-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -418,6 +427,17 @@
 .lv-distribution-card:hover {
   background: var(--lv-color-surface-elevated);
   border-left-color: var(--lv-color-primary);
+}
+
+.lv-distribution-card.lv-active {
+  background: var(--lv-color-surface-elevated);
+  border-left-color: var(--lv-color-primary);
+  cursor: default;
+}
+
+.lv-distribution-card.lv-active .lv-chart-title {
+  color: var(--lv-color-text);
+  font-weight: 700;
 }
 
 .lv-distribution-header {

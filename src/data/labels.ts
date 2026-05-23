@@ -49,8 +49,9 @@ export function cleanCommunityName(rawName: string, level?: string): string {
     }
 
     case 'bg': {
-      // "Block Group N, Census Tract X.YY, …" → "BG N · Tract X.YY"
-      const m = name.match(/Block Group\s+(\d+),\s*Census Tract\s+([\d.]+)/i)
+      // ACS uses either commas or semicolons between the BG and Tract parts;
+      // both forms appear in real responses.
+      const m = name.match(/Block Group\s+(\d+)[,;]\s*Census Tract\s+([\d.]+)/i)
       return m ? `BG ${m[1]} · Tract ${m[2]}` : firstPart(name)
     }
 
@@ -89,6 +90,8 @@ export function cleanCommunityName(rawName: string, level?: string): string {
 }
 
 function firstPart(s: string): string {
-  const idx = s.indexOf(',')
-  return (idx >= 0 ? s.slice(0, idx) : s).trim()
+  // Split on either comma or semicolon — ACS uses both as delimiters
+  // depending on the level and the API endpoint.
+  const m = s.match(/^[^,;]+/)
+  return (m ? m[0] : s).trim()
 }

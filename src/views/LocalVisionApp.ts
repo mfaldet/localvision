@@ -228,10 +228,16 @@ export class LocalVisionApp {
     this.loadingProgressBarEl = document.createElement('div')
     this.loadingProgressBarEl.className = 'lv-loading-progress-bar'
     progressTrack.appendChild(this.loadingProgressBarEl)
+    // Hint about cache behaviour — block group and tract levels can take
+    // 30-60s on first load because of the Census paginated geometry fetch.
+    const hint = document.createElement('div')
+    hint.className = 'lv-loading-hint'
+    hint.textContent = 'First load can take 30–60s · cached after'
     card.appendChild(spinner)
     card.appendChild(this.loadingLabelEl)
     card.appendChild(progressTrack)
     card.appendChild(this.loadingElapsedEl)
+    card.appendChild(hint)
     this.loadingOverlayEl.appendChild(card)
     this.bodyEl.appendChild(this.loadingOverlayEl)
 

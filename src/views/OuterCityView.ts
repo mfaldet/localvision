@@ -632,17 +632,21 @@ export class OuterCityView {
   }
 
   private renderComparisonCharts(width: number): void {
-    const activeKpi = this.kpiDefs.get(this.activeKpi)
-    if (!activeKpi) return
+    // One distribution card per KPI. Active KPI rendered first + emphasized.
+    // The previous design also included a giant ranked-bar chart at the top,
+    // which became unreadable for fine-grained levels (600+ bars for block
+    // groups), so it's removed in favour of the more scalable distribution
+    // cards. Selection still flows via map clicks.
+    const level = this.activeBinding?.table.meta?.geographyLevel
+    const compatible = [...this.kpiDefs.values()].filter((def) => {
+      if (!level || !def.availableAtLevels || def.availableAtLevels.length === 0) return true
+      return def.availableAtLevels.includes(level)
+    })
 
-    // 1. Big ranked bar chart for the active KPI.
-    this.renderRankedBarCard(activeKpi, width)
-
-    // 2. Compact distribution card for every other KPI.
-    this.kpiDefs.forEach((def) => {
-      if (def.id !== this.activeKpi) {
-        this.renderDistributionCard(def, width)
-      }
+    const active = compatible.find((d) => d.id === this.activeKpi)
+    if (active) this.renderDistributionCard(active, width, true)
+    compatible.forEach((def) => {
+      if (def.id !== this.activeKpi) this.renderDistributionCard(def, width, false)
     })
   }
 
@@ -739,11 +743,15 @@ export class OuterCityView {
    * stats row, mini histogram, and (if a feature is selected) a marker line
    * at the selected feature's value. Click the card to make this KPI active.
    */
-  private renderDistributionCard(def: KpiDefinition, width: number): void {
+  private renderDistributionCard(def: KpiDefinition, width: number, isActive = false): void {
     const card = document.createElement('div')
-    card.className = 'lv-chart-card lv-distribution-card'
-    card.title = `Click to make "${def.label}" the active KPI`
-    card.addEventListener('click', () => this.setActiveKpi(def.id))
+    card.className = `lv-chart-card lv-distribution-card${isActive ? ' lv-active' : ''}`
+    if (!isActive) {
+      card.title = `Click to make "${def.label}" the active KPI`
+      card.addEventListener('click', () => this.setActiveKpi(def.id))
+    } else {
+      card.title = `${def.label} — currently active (drives the choropleth)`
+    }
 
     // Gather + summarize values
     const values = this.communities
@@ -809,7 +817,7 @@ export class OuterCityView {
 
       const plot = Plot.plot({
         width: width - 48,
-        height: 78,
+        height: isActive ? 130 : 78,
         marginLeft: 8,
         marginRight: 8,
         marginTop: 6,
