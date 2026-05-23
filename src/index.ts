@@ -84,6 +84,7 @@ export {
   variablesByCategory,
   bindDataToBoundaries,
   stripAcsGeoIdPrefix,
+  cleanCommunityName,
   parseCsv,
   loadCsv,
 } from './data/index'
@@ -94,6 +95,7 @@ export type {
   AcsGeographyLevel,
   VariableMeta,
   VariableCategory,
+  GeographicLevel,
   BindOptions,
   ParseCsvOptions,
   DataTable,

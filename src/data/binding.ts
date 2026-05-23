@@ -7,6 +7,7 @@
 
 import type { GeoJsonFeatureCollection, GeoJsonFeature } from '../types'
 import type { DataTable, DataBinding } from './types'
+import { cleanCommunityName } from './labels'
 
 export interface BindOptions {
   /** Property name on each feature that matches DataRow.geoid. */
@@ -37,13 +38,15 @@ export function bindDataToBoundaries(
     const row = byGeoid.get(geoid)
 
     const merged: Record<string, unknown> = { ...f.properties, _lv_geoid: geoid }
+    const level = table.meta?.geographyLevel
+    const rawLabel = row?.name ?? (f.properties?.['NAME'] as string | undefined)
+    merged['_lv_label'] = rawLabel
+      ? cleanCommunityName(rawLabel, level)
+      : geoid
     if (row) {
-      merged['_lv_label'] = row.name ?? f.properties?.['NAME'] ?? geoid
       for (const [k, v] of Object.entries(row.values)) {
         if (v !== null) merged[k] = v
       }
-    } else {
-      merged['_lv_label'] = f.properties?.['NAME'] ?? geoid
     }
 
     return { ...f, properties: merged }

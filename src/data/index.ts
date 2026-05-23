@@ -15,6 +15,8 @@ export type {
 } from './acs'
 
 export { bindDataToBoundaries, stripAcsGeoIdPrefix } from './binding'
+export { cleanCommunityName } from './labels'
+export type { GeographicLevel } from './labels'
 export type { BindOptions } from './binding'
 
 export { parseCsv, loadCsv } from './csv'
