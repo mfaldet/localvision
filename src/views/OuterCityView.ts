@@ -441,6 +441,92 @@ export class OuterCityView {
     else this.map.once('load', apply)
   }
 
+  // ── Custom map layers ───────────────────────────────────────────────────────
+
+  /**
+   * Add a user-supplied GeoJSON layer on top of the choropleth. The
+   * caller controls the visual via `paint` / `layout` props; LocalVision
+   * just owns the lifecycle (creating sources, swapping data, ordering).
+   *
+   * Multiple calls with the same `id` replace the source data in-place.
+   */
+  addCustomLayer(opts: {
+    id: string
+    type: 'fill' | 'line' | 'circle' | 'symbol'
+    source: import('../types').GeoJsonFeatureCollection
+    paint?: Record<string, unknown>
+    layout?: Record<string, unknown>
+  }): void {
+    const apply = () => {
+      const sourceId = `lv-custom-${opts.id}`
+      const layerId = `lv-custom-${opts.id}`
+      const existing = this.map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
+      if (existing) {
+        existing.setData(opts.source as unknown as GeoJSON.FeatureCollection)
+        return
+      }
+      this.map.addSource(sourceId, {
+        type: 'geojson',
+        data: opts.source as unknown as GeoJSON.FeatureCollection,
+      })
+      // Insert below the city-focus + clip overlays so they stay
+      // visible on top. Falls through to top-of-stack if neither exists.
+      const beforeId = this.map.getLayer('lv-city-focus-halo')
+        ? 'lv-city-focus-halo'
+        : this.map.getLayer('lv-clip-area-line')
+          ? 'lv-clip-area-line'
+          : undefined
+      this.map.addLayer(
+        {
+          id: layerId,
+          type: opts.type,
+          source: sourceId,
+          paint: (opts.paint ?? {}) as maplibregl.LayerSpecification['paint'],
+          layout: (opts.layout ?? {}) as maplibregl.LayerSpecification['layout'],
+        } as maplibregl.LayerSpecification,
+        beforeId,
+      )
+    }
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
+  /** Remove a custom layer previously added via addCustomLayer. */
+  removeCustomLayer(id: string): void {
+    const sourceId = `lv-custom-${id}`
+    const layerId = `lv-custom-${id}`
+    if (this.map.getLayer(layerId)) this.map.removeLayer(layerId)
+    if (this.map.getSource(sourceId)) this.map.removeSource(sourceId)
+  }
+
+  /** Toggle visibility of a custom layer without removing it. */
+  setCustomLayerVisibility(id: string, visible: boolean): void {
+    const layerId = `lv-custom-${id}`
+    if (!this.map.getLayer(layerId)) return
+    this.map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none')
+  }
+
+  /**
+   * Change a custom layer's opacity. Routes to the right paint property
+   * for the layer type (fill/line/circle/symbol).
+   */
+  setCustomLayerOpacity(id: string, opacity: number): void {
+    const layerId = `lv-custom-${id}`
+    const layer = this.map.getLayer(layerId)
+    if (!layer) return
+    const t = layer.type
+    if (t === 'fill')   this.map.setPaintProperty(layerId, 'fill-opacity', opacity)
+    if (t === 'line')   this.map.setPaintProperty(layerId, 'line-opacity', opacity)
+    if (t === 'circle') {
+      this.map.setPaintProperty(layerId, 'circle-opacity', opacity)
+      this.map.setPaintProperty(layerId, 'circle-stroke-opacity', opacity)
+    }
+    if (t === 'symbol') {
+      this.map.setPaintProperty(layerId, 'icon-opacity', opacity)
+      this.map.setPaintProperty(layerId, 'text-opacity', opacity)
+    }
+  }
+
   // ── Clip-area API ───────────────────────────────────────────────────────────
 
   /** Read the current clip polygon (null when no clip is active). */

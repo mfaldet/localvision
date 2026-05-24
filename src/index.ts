@@ -1,6 +1,10 @@
 export { InnerCityView } from './views/InnerCityView'
 export { OuterCityView, COLOR_SCHEMES } from './views/OuterCityView'
 export type { ChoroplethStyleConfig, ColorSchemeName, LinePatternName } from './views/OuterCityView'
+
+// ─── Custom map layers (Bundle 5) ────────────────────────────────────────────
+export { LAYER_PRESETS, PRESET_IDS, fetchOverpassGeoJson, osmJsonToGeoJson } from './layers/index'
+export type { LayerPreset, LayerType, OverpassFetchOptions } from './layers/index'
 export { LocalVisionApp } from './views/LocalVisionApp'
 
 export type {

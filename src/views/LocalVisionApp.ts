@@ -9,7 +9,9 @@ import type { OuterLevel, InnerLevel } from '../geo/levels'
 import { LEVEL_META } from '../geo/levels'
 import { BoundaryLoader, type PlaceIndexEntry } from '../geo/loader'
 import { getStateMeta, resolveStateFips } from '../geo/fips'
-import { bboxCenter, findFeatureContaining } from '../geo/spatial'
+import { bbox, bboxCenter, findFeatureContaining } from '../geo/spatial'
+import { LAYER_PRESETS } from '../layers/presets'
+import { fetchOverpassGeoJson } from '../layers/overpass'
 import type { GeoJsonFeature } from '../types'
 import { SelectionStore } from '../state/selection'
 import {
@@ -736,6 +738,11 @@ export class LocalVisionApp {
       await this.loadView('inner')
       console.log('[LocalVision] selectCity → loadView done in', Math.round(performance.now() - tStart), 'ms')
       this.recordTiming('state', performance.now() - tStart)
+
+      // Replay any persisted-active map-layer presets for the new city's
+      // bbox. Layer rows in the settings panel reflect persisted state
+      // already; we just need to actually fetch & add the layers here.
+      void this.replayPersistedLayers()
     } catch (err) {
       errored = true
       console.error('[LocalVision] City selection failed:', err)
@@ -1191,6 +1198,123 @@ export class LocalVisionApp {
     this.persistStyle(partial)
   }
 
+  // ── Custom map layer presets ────────────────────────────────────────────────
+
+  private static LAYERS_STORAGE_KEY = 'lv_custom_layers_v1'
+
+  /** Persistent state for each preset: enabled? opacity (0..1)? */
+  private loadPersistedLayers(): Record<string, { active: boolean; opacity: number }> {
+    if (typeof localStorage === 'undefined') return {}
+    try {
+      const raw = localStorage.getItem(LocalVisionApp.LAYERS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, { active: boolean; opacity: number }>) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  private persistLayer(id: string, partial: Partial<{ active: boolean; opacity: number }>): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+      const existing = this.loadPersistedLayers()
+      const cur = existing[id] ?? { active: false, opacity: 1 }
+      existing[id] = { ...cur, ...partial }
+      localStorage.setItem(LocalVisionApp.LAYERS_STORAGE_KEY, JSON.stringify(existing))
+    } catch {
+      /* quota or disabled — skip */
+    }
+  }
+
+  /**
+   * After a city is selected, walk persisted layer state and re-activate
+   * each previously-on preset for the new city's bbox. Layer-row UI
+   * already reflects the persisted state when the panel is built, so we
+   * just need to actually fetch + add the layers here.
+   */
+  private async replayPersistedLayers(): Promise<void> {
+    const layers = this.loadPersistedLayers()
+    for (const [id, state] of Object.entries(layers)) {
+      if (!state.active) continue
+      // Find the row's status element so we can show the loading state
+      const cb = document.getElementById(`lv-layer-${id}`) as HTMLInputElement | null
+      const status = cb?.parentElement?.querySelector('.lv-layer-status') as HTMLElement | null
+      if (cb) cb.checked = true
+      if (status) {
+        status.textContent = 'loading…'
+        // eslint-disable-next-line no-await-in-loop -- sequential keeps Overpass happy
+        await this.activateLayerPreset(id, status)
+        this.outerView?.setCustomLayerOpacity(id, state.opacity)
+      }
+    }
+  }
+
+  /**
+   * Fetch the preset's OSM data via Overpass for the current city's bbox
+   * and add it to the active view. Reentrant: if the layer is already
+   * present, just flips its visibility back to 'visible'. Status messages
+   * surface to the row indicator so the user knows what's happening.
+   */
+  private async activateLayerPreset(id: string, status: HTMLElement): Promise<void> {
+    const preset = LAYER_PRESETS[id]
+    if (!preset || !this.outerView) return
+
+    // If the layer is already on the map, just toggle it back visible
+    // — Overpass results are spatially indexed to the city, and bbox
+    // hasn't changed, so re-fetching would be wasteful.
+    try {
+      this.outerView.setCustomLayerVisibility(id, true)
+      const persistedLayers = this.loadPersistedLayers()
+      // If we have a record AND the layer source actually exists on the
+      // map, the visibility flip above suffices.
+      if (persistedLayers[id] && persistedLayers[id].active) {
+        // No-op — we just toggled it back on
+      }
+    } catch {
+      /* layer not yet added — fall through to fetch */
+    }
+
+    // Compute the bbox to query Overpass for. Use the selected city's
+    // polygon bbox + a small margin (10%) so layers extend a bit past
+    // the city's boundary. Falls back to the visible map bounds.
+    const cityFeature = this.selectedCityFeature
+    let queryBbox: [number, number, number, number]
+    if (cityFeature) {
+      const [w, s, e, n] = bbox(cityFeature.geometry)
+      const margin = 0.1
+      const dx = (e - w) * margin
+      const dy = (n - s) * margin
+      queryBbox = [s - dy, w - dx, n + dy, e + dx]
+    } else {
+      // No selected city — Overpass needs SOME bbox; refuse rather than
+      // hammer the API with a continent-sized query.
+      status.textContent = 'pick a city first'
+      this.persistLayer(id, { active: false })
+      return
+    }
+
+    try {
+      const startedAt = performance.now()
+      const fc = await fetchOverpassGeoJson({
+        bbox: queryBbox,
+        query: preset.overpassQuery,
+      })
+      const elapsedMs = Math.round(performance.now() - startedAt)
+
+      this.outerView.addCustomLayer({
+        id: preset.id,
+        type: preset.type,
+        source: fc,
+        paint: preset.paint,
+      })
+      status.textContent = `${fc.features.length} · ${(elapsedMs / 1000).toFixed(1)}s`
+      this.persistLayer(id, { active: true })
+    } catch (err) {
+      console.error(`[LocalVision] layer ${id} fetch failed:`, err)
+      status.textContent = 'failed'
+      this.persistLayer(id, { active: false })
+    }
+  }
+
   /**
    * Wire up the clip-area "Draw" button. Two modes:
    *   1. Not drawing — clicking starts a new drawing session. Hint shows.
@@ -1376,7 +1500,68 @@ export class LocalVisionApp {
     lwSection.appendChild(lwRow)
     panel.appendChild(lwSection)
 
-    // 6. Clip area — draw a polygon to focus the active view
+    // 6. Map layers — OSM-backed overlay presets
+    const layersSection = section('Map layers')
+    const layersList = document.createElement('div')
+    layersList.className = 'lv-layers-list'
+    const persistedLayers = this.loadPersistedLayers()
+    Object.values(LAYER_PRESETS).forEach((preset) => {
+      const row = document.createElement('div')
+      row.className = 'lv-layer-row'
+
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.className = 'lv-layer-checkbox'
+      cb.id = `lv-layer-${preset.id}`
+      const persisted = persistedLayers[preset.id]
+      cb.checked = persisted?.active ?? false
+
+      const label = document.createElement('label')
+      label.htmlFor = cb.id
+      label.className = 'lv-layer-label'
+      label.textContent = preset.label
+
+      const status = document.createElement('span')
+      status.className = 'lv-layer-status'
+
+      const opSlider = document.createElement('input')
+      opSlider.type = 'range'
+      opSlider.className = 'lv-layer-opacity'
+      opSlider.min = '0'
+      opSlider.max = '100'
+      opSlider.step = '5'
+      opSlider.value = String(Math.round((persisted?.opacity ?? 1) * 100))
+      opSlider.disabled = !cb.checked
+      opSlider.addEventListener('input', () => {
+        const v = parseInt(opSlider.value, 10) / 100
+        this.outerView?.setCustomLayerOpacity(preset.id, v)
+        this.persistLayer(preset.id, { opacity: v })
+      })
+
+      cb.addEventListener('change', () => {
+        opSlider.disabled = !cb.checked
+        if (cb.checked) {
+          status.textContent = 'loading…'
+          void this.activateLayerPreset(preset.id, status).then(() => {
+            this.outerView?.setCustomLayerOpacity(preset.id, parseInt(opSlider.value, 10) / 100)
+          })
+        } else {
+          this.outerView?.setCustomLayerVisibility(preset.id, false)
+          status.textContent = ''
+          this.persistLayer(preset.id, { active: false })
+        }
+      })
+
+      row.appendChild(cb)
+      row.appendChild(label)
+      row.appendChild(status)
+      row.appendChild(opSlider)
+      layersList.appendChild(row)
+    })
+    layersSection.appendChild(layersList)
+    panel.appendChild(layersSection)
+
+    // 7. Clip area — draw a polygon to focus the active view
     const clipSection = section('Clip area')
     const clipRow = document.createElement('div')
     clipRow.className = 'lv-clip-row'
