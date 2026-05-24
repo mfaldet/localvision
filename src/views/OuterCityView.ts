@@ -33,6 +33,21 @@ export const COLOR_SCHEMES: Record<string, string[]> = {
 
 export type ColorSchemeName = keyof typeof COLOR_SCHEMES
 
+/**
+ * Dash patterns for the boundary line layer. Values are arrays of on/off
+ * lengths in units of line-width, fed to MapLibre's `line-dasharray`.
+ * `solid` uses `[1, 0]` (1 unit on, 0 off = continuous) so we can always
+ * set the property without juggling null.
+ */
+export type LinePatternName = 'solid' | 'dashed' | 'dotted' | 'dash-dot'
+
+const LINE_PATTERNS: Record<LinePatternName, number[]> = {
+  solid: [1, 0],
+  dashed: [3, 2],
+  dotted: [1, 1.5],
+  'dash-dot': [3, 1.5, 1, 1.5],
+}
+
 /** Style options controllable from the display-settings panel. */
 export interface ChoroplethStyleConfig {
   scheme: ColorSchemeName
@@ -45,6 +60,8 @@ export interface ChoroplethStyleConfig {
   lineColor: 'auto' | string
   /** Boundary line width in CSS px (0 hides outlines). */
   lineWidth: number
+  /** Dash pattern for the boundary lines. Default 'solid'. */
+  linePattern: LinePatternName
 }
 
 const DEFAULT_STYLE_CONFIG: ChoroplethStyleConfig = {
@@ -52,6 +69,7 @@ const DEFAULT_STYLE_CONFIG: ChoroplethStyleConfig = {
   fillOpacity: 0.65,
   lineColor: 'auto',
   lineWidth: 1,
+  linePattern: 'solid',
 }
 const SELECTED_FILL = 'lv-selected-fill'
 
@@ -445,6 +463,11 @@ export class OuterCityView {
     if (this.map.getLayer(CHOROPLETH_LINE)) {
       this.map.setPaintProperty(CHOROPLETH_LINE, 'line-color', this.resolveLineColor())
       this.map.setPaintProperty(CHOROPLETH_LINE, 'line-width', this.styleConfig.lineWidth)
+      this.map.setPaintProperty(
+        CHOROPLETH_LINE,
+        'line-dasharray',
+        LINE_PATTERNS[this.styleConfig.linePattern],
+      )
     }
   }
 
@@ -503,6 +526,7 @@ export class OuterCityView {
         'line-color': this.resolveLineColor(),
         'line-width': this.styleConfig.lineWidth,
         'line-opacity': 0.8,
+        'line-dasharray': LINE_PATTERNS[this.styleConfig.linePattern],
       },
     })
 

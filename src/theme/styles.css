@@ -910,3 +910,37 @@
   border-color: var(--lv-color-primary);
   box-shadow: 0 0 0 2px var(--lv-color-bg), 0 0 0 4px var(--lv-color-primary);
 }
+
+/* ── Line-pattern preset buttons (settings panel) ───────────────────────── */
+
+.lv-line-pattern-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.lv-line-pattern-btn {
+  background: var(--lv-color-bg);
+  border: 1px solid var(--lv-color-border);
+  color: var(--lv-color-text-muted);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.lv-line-pattern-btn:hover {
+  color: var(--lv-color-text);
+  border-color: var(--lv-color-primary);
+}
+
+.lv-line-pattern-btn.lv-active {
+  background: var(--lv-color-primary);
+  color: white;
+  border-color: var(--lv-color-primary);
+}

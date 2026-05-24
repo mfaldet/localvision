@@ -916,6 +916,10 @@ export class LocalVisionApp {
       const t = this.time.currentValue()
       if (t != null) this.outerView.setCurrentTime(t)
       if (this.selectedCityFeature) this.outerView.setCityFocus(this.selectedCityFeature)
+      // Replay any persisted style settings into the freshly-mounted view
+      // so the user's choices survive view switches AND page reloads.
+      const persisted = this.loadPersistedStyle()
+      if (persisted) this.outerView.setStyle(persisted)
       this.forwardListeners(this.outerView)
     }
 
@@ -1177,6 +1181,37 @@ function nextDrillLevel(
 
   // ── Display settings panel ──────────────────────────────────────────────────
 
+  private static STYLE_STORAGE_KEY = 'lv_style_config_v1'
+
+  /** Read persisted style settings from localStorage. */
+  private loadPersistedStyle(): Partial<ChoroplethStyleConfig> | null {
+    if (typeof localStorage === 'undefined') return null
+    try {
+      const raw = localStorage.getItem(LocalVisionApp.STYLE_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Partial<ChoroplethStyleConfig>) : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Merge + write persisted style settings. */
+  private persistStyle(partial: Partial<ChoroplethStyleConfig>): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+      const existing = this.loadPersistedStyle() ?? {}
+      const merged = { ...existing, ...partial }
+      localStorage.setItem(LocalVisionApp.STYLE_STORAGE_KEY, JSON.stringify(merged))
+    } catch {
+      /* quota or disabled — silently skip */
+    }
+  }
+
+  /** setStyle on the active view AND write to localStorage. */
+  private applyAndPersistStyle(partial: Partial<ChoroplethStyleConfig>): void {
+    this.outerView?.setStyle(partial)
+    this.persistStyle(partial)
+  }
+
   private toggleSettingsPanel(): void {
     const open = this.settingsPanelEl.style.display !== 'none'
     this.settingsPanelEl.style.display = open ? 'none' : ''
@@ -1185,11 +1220,20 @@ function nextDrillLevel(
 
   /**
    * Build the settings popover. Sections: color scheme, fill opacity,
-   * boundary color, boundary width. Each control writes through
-   * `outerView.setStyle(...)`. Settings persist within the session
-   * (not yet across reloads).
+   * boundary color, boundary pattern, boundary width. Each control writes
+   * through `applyAndPersistStyle(...)` so changes survive page reloads.
+   * Initial control values reflect any previously-persisted settings.
    */
   private buildSettingsPanel(): HTMLElement {
+    const persisted = this.loadPersistedStyle() ?? {}
+    const init = {
+      scheme:      persisted.scheme      ?? 'default',
+      fillOpacity: persisted.fillOpacity ?? 0.65,
+      lineColor:   persisted.lineColor   ?? 'auto',
+      lineWidth:   persisted.lineWidth   ?? 1,
+      linePattern: persisted.linePattern ?? 'solid',
+    }
+
     const panel = document.createElement('div')
     panel.className = 'lv-settings-panel'
 
@@ -1215,11 +1259,11 @@ function nextDrillLevel(
       btn.title = s.label
       btn.dataset['scheme'] = s.key
       btn.style.background = `linear-gradient(to right, ${s.palette[0]}, ${s.palette[1]}, ${s.palette[2]})`
-      if (s.key === 'default') btn.classList.add('lv-active')
+      if (s.key === init.scheme) btn.classList.add('lv-active')
       btn.addEventListener('click', () => {
         schemeRow.querySelectorAll('.lv-scheme-swatch').forEach((b) => b.classList.remove('lv-active'))
         btn.classList.add('lv-active')
-        this.outerView?.setStyle({ scheme: s.key as never })
+        this.applyAndPersistStyle({ scheme: s.key as never })
       })
       schemeRow.appendChild(btn)
     })
@@ -1230,14 +1274,15 @@ function nextDrillLevel(
     const opSection = section('Fill opacity')
     const opRow = document.createElement('div')
     opRow.className = 'lv-settings-control-row'
-    const opSlider = slider(0, 100, 65, 1)
+    const opPct = Math.round(init.fillOpacity * 100)
+    const opSlider = slider(0, 100, opPct, 1)
     const opLabel = document.createElement('span')
     opLabel.className = 'lv-settings-value'
-    opLabel.textContent = '65%'
+    opLabel.textContent = `${opPct}%`
     opSlider.addEventListener('input', () => {
       const v = parseInt(opSlider.value, 10)
       opLabel.textContent = `${v}%`
-      this.outerView?.setStyle({ fillOpacity: v / 100 })
+      this.applyAndPersistStyle({ fillOpacity: v / 100 })
     })
     opRow.appendChild(opSlider)
     opRow.appendChild(opLabel)
@@ -1254,35 +1299,62 @@ function nextDrillLevel(
       { key: '#000000', label: 'Black',     swatch: '#000000' },
       { key: '#fbbf24', label: 'Amber',     swatch: '#fbbf24' },
     ]
-    lineColorPresets.forEach((p, i) => {
+    lineColorPresets.forEach((p) => {
       const btn = document.createElement('button')
       btn.className = 'lv-line-color-swatch'
       btn.title = p.label
       btn.dataset['lineColor'] = p.key
       btn.style.background = p.swatch
-      if (i === 0) btn.classList.add('lv-active')
+      if (p.key === init.lineColor) btn.classList.add('lv-active')
       btn.addEventListener('click', () => {
         lcRow.querySelectorAll('.lv-line-color-swatch').forEach((b) => b.classList.remove('lv-active'))
         btn.classList.add('lv-active')
-        this.outerView?.setStyle({ lineColor: p.key as never })
+        this.applyAndPersistStyle({ lineColor: p.key as never })
       })
       lcRow.appendChild(btn)
     })
     lcSection.appendChild(lcRow)
     panel.appendChild(lcSection)
 
-    // 4. Boundary width
+    // 4. Boundary pattern (solid / dashed / dotted / dash-dot)
+    const lpSection = section('Boundary pattern')
+    const lpRow = document.createElement('div')
+    lpRow.className = 'lv-line-pattern-row'
+    const patterns: { key: string; label: string; preview: string }[] = [
+      { key: 'solid',    label: 'Solid',    preview: '─────────' },
+      { key: 'dashed',   label: 'Dashed',   preview: '─ ─ ─ ─' },
+      { key: 'dotted',   label: 'Dotted',   preview: '· · · · · · ·' },
+      { key: 'dash-dot', label: 'Dash-dot', preview: '─ · ─ · ─' },
+    ]
+    patterns.forEach((p) => {
+      const btn = document.createElement('button')
+      btn.className = 'lv-line-pattern-btn'
+      btn.title = p.label
+      btn.dataset['linePattern'] = p.key
+      btn.textContent = p.preview
+      if (p.key === init.linePattern) btn.classList.add('lv-active')
+      btn.addEventListener('click', () => {
+        lpRow.querySelectorAll('.lv-line-pattern-btn').forEach((b) => b.classList.remove('lv-active'))
+        btn.classList.add('lv-active')
+        this.applyAndPersistStyle({ linePattern: p.key as never })
+      })
+      lpRow.appendChild(btn)
+    })
+    lpSection.appendChild(lpRow)
+    panel.appendChild(lpSection)
+
+    // 5. Boundary width
     const lwSection = section('Boundary width')
     const lwRow = document.createElement('div')
     lwRow.className = 'lv-settings-control-row'
-    const lwSlider = slider(0, 4, 1, 0.5)
+    const lwSlider = slider(0, 4, init.lineWidth, 0.5)
     const lwLabel = document.createElement('span')
     lwLabel.className = 'lv-settings-value'
-    lwLabel.textContent = '1.0 px'
+    lwLabel.textContent = `${init.lineWidth.toFixed(1)} px`
     lwSlider.addEventListener('input', () => {
       const v = parseFloat(lwSlider.value)
       lwLabel.textContent = `${v.toFixed(1)} px`
-      this.outerView?.setStyle({ lineWidth: v })
+      this.applyAndPersistStyle({ lineWidth: v })
     })
     lwRow.appendChild(lwSlider)
     lwRow.appendChild(lwLabel)
