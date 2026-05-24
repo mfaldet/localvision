@@ -1161,27 +1161,6 @@ export class LocalVisionApp {
       this.breadcrumbEl.appendChild(loading)
     }
   }
-}
-
-// ─── Drill-down helpers ──────────────────────────────────────────────────────
-
-/**
- * Canonical drill paths for outer-city analysis. State → county → tract → bg.
- * Returns null when there's no deeper level (block group is the floor).
- */
-function nextDrillLevel(
-  from: OuterLevel | InnerLevel,
-): OuterLevel | InnerLevel | null {
-  switch (from) {
-    case 'state':  return 'county'
-    case 'county': return 'tract'
-    case 'tract':  return 'bg'
-    default:       return null
-  }
-
-  // ── Display settings panel ──────────────────────────────────────────────────
-
-  private static STYLE_STORAGE_KEY = 'lv_style_config_v1'
 
   /** Read persisted style settings from localStorage. */
   private loadPersistedStyle(): Partial<ChoroplethStyleConfig> | null {
@@ -1447,6 +1426,24 @@ function nextDrillLevel(
     }
   }
 }
+
+// ─── Drill-down helpers ──────────────────────────────────────────────────────
+
+/**
+ * Canonical drill paths for outer-city analysis. State → county → tract → bg.
+ * Returns null when there's no deeper level (block group is the floor).
+ */
+function nextDrillLevel(
+  from: OuterLevel | InnerLevel,
+): OuterLevel | InnerLevel | null {
+  switch (from) {
+    case 'state':  return 'county'
+    case 'county': return 'tract'
+    case 'tract':  return 'bg'
+    default:       return null
+  }
+}
+
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
