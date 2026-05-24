@@ -944,3 +944,56 @@
   color: white;
   border-color: var(--lv-color-primary);
 }
+
+/* ── Clip-area controls (settings panel) ────────────────────────────────── */
+
+.lv-clip-row {
+  display: flex;
+  gap: 6px;
+}
+
+.lv-clip-btn {
+  flex: 1;
+  padding: 6px 12px;
+  background: var(--lv-color-bg);
+  border: 1px solid var(--lv-color-border);
+  color: var(--lv-color-text);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.lv-clip-btn:hover {
+  border-color: #fbbf24;
+}
+
+.lv-clip-btn[data-drawing="true"] {
+  background: #fbbf24;
+  color: var(--lv-color-bg);
+  border-color: #fbbf24;
+}
+
+.lv-clip-btn-clear {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: var(--lv-color-text-muted);
+}
+
+.lv-clip-btn-clear:hover {
+  border-color: var(--lv-color-primary);
+  color: var(--lv-color-text);
+}
+
+.lv-clip-hint {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--lv-color-bg);
+  border: 1px dashed #fbbf24;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--lv-color-text-muted);
+  text-align: center;
+}

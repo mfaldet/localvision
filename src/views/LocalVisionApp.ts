@@ -1212,6 +1212,42 @@ function nextDrillLevel(
     this.persistStyle(partial)
   }
 
+  /**
+   * Wire up the clip-area "Draw" button. Two modes:
+   *   1. Not drawing — clicking starts a new drawing session. Hint shows.
+   *      On completion (polygon closed): apply to view + reveal Clear.
+   *      On cancel (Esc / too few points): just reset the button.
+   *   2. Drawing — clicking aborts the in-flight drawing.
+   */
+  private handleClipDrawClick(
+    drawBtn: HTMLButtonElement,
+    clearBtn: HTMLButtonElement,
+    hintEl: HTMLElement,
+  ): void {
+    if (!this.outerView) return
+    if (drawBtn.dataset['drawing'] === 'true') {
+      this.outerView.cancelClipDrawing()
+      drawBtn.dataset['drawing'] = 'false'
+      drawBtn.textContent = 'Draw clip area'
+      hintEl.style.display = 'none'
+      return
+    }
+    drawBtn.dataset['drawing'] = 'true'
+    drawBtn.textContent = 'Cancel'
+    hintEl.style.display = ''
+    // Auto-collapse the panel so the user can see the map
+    this.toggleSettingsPanel()
+    this.outerView.startClipDrawing((feature) => {
+      drawBtn.dataset['drawing'] = 'false'
+      drawBtn.textContent = 'Draw clip area'
+      hintEl.style.display = 'none'
+      if (feature && this.outerView) {
+        this.outerView.setClipPolygon(feature)
+        clearBtn.style.display = ''
+      }
+    })
+  }
+
   private toggleSettingsPanel(): void {
     const open = this.settingsPanelEl.style.display !== 'none'
     this.settingsPanelEl.style.display = open ? 'none' : ''
@@ -1360,6 +1396,34 @@ function nextDrillLevel(
     lwRow.appendChild(lwLabel)
     lwSection.appendChild(lwRow)
     panel.appendChild(lwSection)
+
+    // 6. Clip area — draw a polygon to focus the active view
+    const clipSection = section('Clip area')
+    const clipRow = document.createElement('div')
+    clipRow.className = 'lv-clip-row'
+    const drawBtn = document.createElement('button')
+    drawBtn.className = 'lv-clip-btn'
+    drawBtn.textContent = 'Draw clip area'
+    drawBtn.addEventListener('click', () => this.handleClipDrawClick(drawBtn, clearBtn, hintEl))
+    const clearBtn = document.createElement('button')
+    clearBtn.className = 'lv-clip-btn lv-clip-btn-clear'
+    clearBtn.textContent = 'Clear'
+    clearBtn.style.display = this.outerView?.getClipPolygon() ? '' : 'none'
+    clearBtn.addEventListener('click', () => {
+      this.outerView?.setClipPolygon(null)
+      clearBtn.style.display = 'none'
+      drawBtn.textContent = 'Draw clip area'
+    })
+    const hintEl = document.createElement('div')
+    hintEl.className = 'lv-clip-hint'
+    hintEl.textContent = 'Click to add points · double-click to finish · Esc to cancel'
+    hintEl.style.display = 'none'
+
+    clipRow.appendChild(drawBtn)
+    clipRow.appendChild(clearBtn)
+    clipSection.appendChild(clipRow)
+    clipSection.appendChild(hintEl)
+    panel.appendChild(clipSection)
 
     return panel
 

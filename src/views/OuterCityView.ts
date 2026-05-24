@@ -92,6 +92,18 @@ export class OuterCityView {
   private activeBinding: DataBinding | null = null
   private currentTime: string | number | null = null
   private styleConfig: ChoroplethStyleConfig = { ...DEFAULT_STYLE_CONFIG }
+  /** User-drawn polygon clipping which features are emphasized vs dimmed. */
+  private clipPolygon: import('../types').GeoJsonFeature | null = null
+  /** True while the user is actively drawing a clip polygon. */
+  private isDrawingClip = false
+  private clipDrawingState: {
+    points: [number, number][]
+    onComplete: ((feature: import('../types').GeoJsonFeature | null) => void) | null
+    onClick: (e: maplibregl.MapMouseEvent) => void
+    onMouseMove: (e: maplibregl.MapMouseEvent) => void
+    onDblClick: (e: maplibregl.MapMouseEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
+  } | null = null
   private drillButtonLabel?: string
   private listeners: Partial<{ [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[] }> = {}
   private resizeObserver: ResizeObserver
@@ -282,6 +294,8 @@ export class OuterCityView {
 
     this.renderKpiSelector()
     this.renderPanel()
+    // New features need their clipped feature-state recomputed
+    if (this.clipPolygon) this.refreshClipState()
   }
 
   /**
@@ -427,6 +441,101 @@ export class OuterCityView {
     else this.map.once('load', apply)
   }
 
+  // ── Clip-area API ───────────────────────────────────────────────────────────
+
+  /** Read the current clip polygon (null when no clip is active). */
+  getClipPolygon(): import('../types').GeoJsonFeature | null {
+    return this.clipPolygon
+  }
+
+  /**
+   * Set / replace / clear the clip polygon. Features whose centroid sits
+   * outside the polygon get a 'clipped' feature-state, which the fill-
+   * opacity expression dims to ~5%. Pass null to remove the clip.
+   */
+  setClipPolygon(feature: import('../types').GeoJsonFeature | null): void {
+    this.clipPolygon = feature
+    if (this.map.isStyleLoaded()) {
+      this.refreshClipState()
+    } else {
+      this.map.once('load', () => this.refreshClipState())
+    }
+  }
+
+  /**
+   * Begin drawing a clip polygon. Cursor goes crosshair; left-click adds
+   * vertices, double-click closes the polygon, Esc cancels. The callback
+   * fires once with the resulting feature (or null on cancel).
+   */
+  startClipDrawing(
+    onComplete: (feature: import('../types').GeoJsonFeature | null) => void,
+  ): void {
+    if (this.isDrawingClip) return
+    this.isDrawingClip = true
+    this.mapEl.style.cursor = 'crosshair'
+
+    const points: [number, number][] = []
+    const updatePreview = () => this.updateClipPreview(points)
+
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      points.push([e.lngLat.lng, e.lngLat.lat])
+      updatePreview()
+    }
+    const onMouseMove = (e: maplibregl.MapMouseEvent) => {
+      if (points.length === 0) return
+      this.updateClipPreview([...points, [e.lngLat.lng, e.lngLat.lat]])
+    }
+    const onDblClick = (e: maplibregl.MapMouseEvent) => {
+      e.preventDefault?.()
+      // dblclick fires after two clicks → the second point is already in.
+      // Need at least 3 distinct points for a polygon.
+      if (points.length < 3) {
+        this.cancelClipDrawing()
+        onComplete(null)
+        return
+      }
+      // Close the ring by repeating the first point
+      const ring: [number, number][] = [...points, points[0]]
+      const feature: import('../types').GeoJsonFeature = {
+        type: 'Feature',
+        properties: { _lv_clip: true },
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      }
+      this.cancelClipDrawing()
+      onComplete(feature)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        this.cancelClipDrawing()
+        onComplete(null)
+      }
+    }
+
+    this.map.on('click', onClick)
+    this.map.on('mousemove', onMouseMove)
+    this.map.on('dblclick', onDblClick)
+    this.map.doubleClickZoom.disable()
+    window.addEventListener('keydown', onKeyDown)
+
+    this.clipDrawingState = { points, onComplete, onClick, onMouseMove, onDblClick, onKeyDown }
+  }
+
+  /** Abort an in-flight drawing session and tear down its listeners + preview. */
+  cancelClipDrawing(): void {
+    if (!this.isDrawingClip || !this.clipDrawingState) return
+    const s = this.clipDrawingState
+    this.map.off('click', s.onClick)
+    this.map.off('mousemove', s.onMouseMove)
+    this.map.off('dblclick', s.onDblClick)
+    this.map.doubleClickZoom.enable()
+    window.removeEventListener('keydown', s.onKeyDown)
+    this.mapEl.style.cursor = ''
+    this.isDrawingClip = false
+    this.clipDrawingState = null
+    // Wipe live preview
+    this.updateClipPreview([])
+  }
+
   destroy(): void {
     this.unsubscribeSelection()
     this.resizeObserver.disconnect()
@@ -437,11 +546,21 @@ export class OuterCityView {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
-  /** Hover lifts opacity by +0.2 over the base, clamped to 1. */
+  /**
+   * Fill-opacity expression that respects three feature states:
+   *   - clipped: outside an active clip polygon → strongly dimmed (0.05)
+   *   - hover:   pointer over feature → +0.2 over base
+   *   - default: base opacity from styleConfig
+   */
   private fillOpacityExpression(): maplibregl.ExpressionSpecification {
     const base = this.styleConfig.fillOpacity
     const hover = Math.min(1, base + 0.2)
-    return ['case', ['boolean', ['feature-state', 'hover'], false], hover, base] as unknown as maplibregl.ExpressionSpecification
+    return [
+      'case',
+      ['boolean', ['feature-state', 'clipped'], false], 0.05,
+      ['boolean', ['feature-state', 'hover'], false], hover,
+      base,
+    ] as unknown as maplibregl.ExpressionSpecification
   }
 
   /** Resolve the 'auto' line-color sentinel against the active theme. */
@@ -455,6 +574,132 @@ export class OuterCityView {
    * Push the current styleConfig into the live MapLibre layers. Safe to
    * call when layers aren't yet created — it's a no-op in that case.
    */
+  /**
+   * Live drawing preview. Adds/updates a temporary LineString that follows
+   * the in-progress vertices. Pass an empty array to clear the preview.
+   */
+  private updateClipPreview(points: [number, number][]): void {
+    const SRC = 'lv-clip-preview'
+    const LINE = 'lv-clip-preview-line'
+    const VERTS = 'lv-clip-preview-verts'
+
+    if (points.length === 0) {
+      if (this.map.getLayer(LINE)) this.map.removeLayer(LINE)
+      if (this.map.getLayer(VERTS)) this.map.removeLayer(VERTS)
+      if (this.map.getSource(SRC)) this.map.removeSource(SRC)
+      return
+    }
+
+    const data = {
+      type: 'FeatureCollection',
+      features: [
+        ...(points.length >= 2
+          ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: points } }]
+          : []),
+        ...points.map((p) => ({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'Point', coordinates: p },
+        })),
+      ],
+    } as unknown as GeoJSON.FeatureCollection
+
+    const existing = this.map.getSource(SRC) as maplibregl.GeoJSONSource | undefined
+    if (existing) {
+      existing.setData(data)
+    } else {
+      this.map.addSource(SRC, { type: 'geojson', data })
+      this.map.addLayer({
+        id: LINE,
+        type: 'line',
+        source: SRC,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: {
+          'line-color': '#fbbf24',
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      })
+      this.map.addLayer({
+        id: VERTS,
+        type: 'circle',
+        source: SRC,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-color': '#fbbf24',
+          'circle-radius': 4,
+          'circle-stroke-color': this.theme.colorBackground,
+          'circle-stroke-width': 2,
+        },
+      })
+    }
+  }
+
+  /**
+   * Apply / update / clear the clip polygon's visual state:
+   *   - The polygon outline (dashed amber) is rendered as a new layer.
+   *   - For each community feature, point-in-polygon on its bbox center
+   *     decides whether to set feature-state 'clipped' = true (outside).
+   *   - When clipPolygon is null, all clipped state is cleared.
+   */
+  private refreshClipState(): void {
+    const SRC = 'lv-clip-area'
+    const LINE = 'lv-clip-area-line'
+
+    if (!this.clipPolygon) {
+      // Clear feature-state.clipped on every community
+      for (const [, fids] of this.communityFids) {
+        for (const fid of fids) {
+          this.map.setFeatureState({ source: COMMUNITIES_SOURCE, id: fid }, { clipped: false })
+        }
+      }
+      if (this.map.getLayer(LINE)) this.map.removeLayer(LINE)
+      if (this.map.getSource(SRC)) this.map.removeSource(SRC)
+      return
+    }
+
+    // Render the clip-area outline as a thin dashed amber line
+    const data = {
+      type: 'FeatureCollection',
+      features: [this.clipPolygon as unknown as GeoJSON.Feature],
+    } as GeoJSON.FeatureCollection
+    const existing = this.map.getSource(SRC) as maplibregl.GeoJSONSource | undefined
+    if (existing) {
+      existing.setData(data)
+    } else {
+      this.map.addSource(SRC, { type: 'geojson', data })
+      this.map.addLayer({
+        id: LINE,
+        type: 'line',
+        source: SRC,
+        paint: {
+          'line-color': '#fbbf24',
+          'line-width': 1.5,
+          'line-dasharray': [4, 2],
+          'line-opacity': 0.9,
+        },
+      })
+    }
+
+    // Mark features whose bbox center is outside the polygon as clipped
+    // Dynamic import to avoid circular dep on spatial; both live in src.
+    void import('../geo/spatial').then(({ bboxCenter, pointInPolygon }) => {
+      for (const c of this.communities) {
+        const fids = this.communityFids.get(c.id) ?? []
+        let inside = false
+        for (const f of c.geojson.features) {
+          if (pointInPolygon(bboxCenter(f.geometry), this.clipPolygon!.geometry)) {
+            inside = true
+            break
+          }
+        }
+        for (const fid of fids) {
+          this.map.setFeatureState({ source: COMMUNITIES_SOURCE, id: fid }, { clipped: !inside })
+        }
+      }
+    })
+  }
+
   private applyStyleConfig(): void {
     if (this.map.getLayer(CHOROPLETH_FILL)) {
       this.map.setPaintProperty(CHOROPLETH_FILL, 'fill-color', this.buildColorExpression())
