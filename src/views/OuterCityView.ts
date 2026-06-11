@@ -161,16 +161,23 @@ export class OuterCityView {
 
     this.mapEl = document.createElement('div')
     this.mapEl.className = 'lv-map-pane'
-    this.mapEl.style.width = `${this.splitRatio * 100}%`
-
-    const handle = this.buildResizeHandle(body)
 
     this.panelEl = document.createElement('div')
     this.panelEl.className = 'lv-chart-pane'
 
-    body.appendChild(this.mapEl)
-    body.appendChild(handle)
-    body.appendChild(this.panelEl)
+    if (options.mapOnly) {
+      // Compare-mode layout: map takes full width, chart panel hidden.
+      this.mapEl.style.width = '100%'
+      this.panelEl.style.display = 'none'
+      body.appendChild(this.mapEl)
+      body.appendChild(this.panelEl)
+    } else {
+      this.mapEl.style.width = `${this.splitRatio * 100}%`
+      const handle = this.buildResizeHandle(body)
+      body.appendChild(this.mapEl)
+      body.appendChild(handle)
+      body.appendChild(this.panelEl)
+    }
 
     // Init map
     const mapOpts = options.map ?? {}
@@ -342,6 +349,15 @@ export class OuterCityView {
   /** Read the current style config (useful for restoring settings panels). */
   getStyle(): ChoroplethStyleConfig {
     return { ...this.styleConfig }
+  }
+
+  /**
+   * Expose the underlying MapLibre map. Used by LocalVisionApp's
+   * comparison mode to wire pan/zoom sync between two views. Avoid
+   * mutating layers / sources directly — prefer the public setters.
+   */
+  getMap(): maplibregl.Map {
+    return this.map
   }
 
   /**

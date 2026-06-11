@@ -1069,3 +1069,50 @@
   border: 2px solid var(--lv-color-bg);
   cursor: grab;
 }
+
+/* ── Compare toggle + split layout ──────────────────────────────────────── */
+
+.lv-compare-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lv-color-surface-elevated);
+  color: var(--lv-color-text-muted);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.lv-compare-btn:hover {
+  background: var(--lv-color-bg);
+  color: var(--lv-color-text);
+}
+
+.lv-compare-btn.lv-active {
+  background: var(--lv-color-accent);
+  color: white;
+  border-color: var(--lv-color-accent);
+}
+
+.lv-compare-pane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  position: relative;
+}
+
+.lv-compare-pane + .lv-compare-pane {
+  border-left: 2px solid var(--lv-color-bg);
+}
+
+/* Right pane's internal KPI selector is rendered inside the OuterCityView's
+   own root since headerEl was set to undefined. */
+.lv-compare-right .lv-kpi-selector {
+  padding: 8px 12px;
+}

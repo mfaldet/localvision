@@ -137,6 +137,11 @@ export interface OuterCityOptions {
   /** When provided, KPI pills render here instead of an internal header bar */
   headerEl?: HTMLElement
   /**
+   * When true, the chart panel is hidden and the map takes the full width.
+   * Used by the comparison-mode side-by-side layout.
+   */
+  mapOnly?: boolean
+  /**
    * Shared selection store for cross-component linking. When omitted, the
    * view creates an internal store. Pass `LocalVisionApp`'s selection store
    * here to link this view with other components.

@@ -53,7 +53,16 @@ export class LocalVisionApp {
   private boundarySelectEl: HTMLSelectElement
   private settingsBtn!: HTMLButtonElement
   private settingsPanelEl!: HTMLElement
+  private compareBtn!: HTMLButtonElement
   private bodyEl: HTMLElement
+  /** When true, the body shows two side-by-side OuterCityViews. */
+  private compareEnabled = false
+  /** Right-side view in compare mode (left side is this.outerView). */
+  private outerViewCompare: OuterCityView | null = null
+  /** Active KPI for the right map in compare mode. */
+  private compareActiveKpi: string | null = null
+  /** Teardown hook for pan/zoom sync listeners. */
+  private compareSyncTeardown: (() => void) | null = null
 
   private activeView: ViewMode
   private innerBoundary: InnerLevel
@@ -157,7 +166,16 @@ export class LocalVisionApp {
     this.kpiSlotEl.style.display = 'none'
     this.headerEl.appendChild(this.kpiSlotEl)
 
-    // 6. Display-settings gear (far right) — toggles the settings panel
+    // 6. Compare toggle — splits the body into two side-by-side maps
+    this.compareBtn = document.createElement('button')
+    this.compareBtn.className = 'lv-compare-btn'
+    this.compareBtn.title = 'Toggle side-by-side comparison'
+    this.compareBtn.textContent = '⇆'
+    this.compareBtn.style.display = 'none' // shown once a city is loaded
+    this.compareBtn.addEventListener('click', () => this.toggleCompareMode())
+    this.headerEl.appendChild(this.compareBtn)
+
+    // 7. Display-settings gear (far right) — toggles the settings panel
     this.settingsBtn = document.createElement('button')
     this.settingsBtn.className = 'lv-settings-btn'
     this.settingsBtn.title = 'Display settings'
@@ -701,6 +719,7 @@ export class LocalVisionApp {
     this.cityToggleContainerEl.style.display = ''
     this.boundarySelectEl.style.display = ''
     this.settingsBtn.style.display = ''
+    this.compareBtn.style.display = ''
 
     // Reset state for the new city
     this.loadedViews.clear()
@@ -908,6 +927,65 @@ export class LocalVisionApp {
       })
       if (this.selectedCityFeature) this.innerView.setCityFocus(this.selectedCityFeature)
       this.forwardListeners(this.innerView)
+    } else if (this.compareEnabled && cityFirst) {
+      // Compare mode: split body into two side-by-side OuterCityViews.
+      container.style.display = 'flex'
+      const leftBox = document.createElement('div')
+      leftBox.className = 'lv-compare-pane lv-compare-left'
+      const rightBox = document.createElement('div')
+      rightBox.className = 'lv-compare-pane lv-compare-right'
+      container.appendChild(leftBox)
+      container.appendChild(rightBox)
+
+      const persisted = this.loadPersistedStyle()
+      const binding = cachedBinding ?? optionsBinding
+      this.outerView = new OuterCityView({
+        ...this.options.outer,
+        binding,
+        container: leftBox,
+        theme: this.options.theme,
+        headerEl: this.kpiSlotEl, // left view owns the shared header slot
+        selection: this.selection,
+        mapOnly: true,
+        onDrillRequest: this.options.drillProvider
+          ? (c) => this.drillInto(c.id, c.label, c.properties)
+          : undefined,
+      })
+      // Pick + apply a different starting KPI for the right map so the
+      // comparison is visually meaningful from frame one.
+      const primary = this.outerView.getMap() ? this.options.outer.activeKpi : 'median_household_income'
+      if (!this.compareActiveKpi && binding) {
+        this.compareActiveKpi = this.pickCompareKpi(binding, primary)
+      }
+      this.outerViewCompare = new OuterCityView({
+        ...this.options.outer,
+        binding,
+        container: rightBox,
+        theme: this.options.theme,
+        headerEl: undefined, // right view renders its own KPI bar inside its container
+        selection: this.selection,
+        mapOnly: true,
+        activeKpi: this.compareActiveKpi ?? primary,
+      })
+
+      const t = this.time.currentValue()
+      if (t != null) {
+        this.outerView.setCurrentTime(t)
+        this.outerViewCompare.setCurrentTime(t)
+      }
+      if (this.selectedCityFeature) {
+        this.outerView.setCityFocus(this.selectedCityFeature)
+        this.outerViewCompare.setCityFocus(this.selectedCityFeature)
+      }
+      if (persisted) {
+        this.outerView.setStyle(persisted)
+        this.outerViewCompare.setStyle(persisted)
+      }
+      this.forwardListeners(this.outerView)
+
+      // Sync pan / zoom both ways
+      this.compareSyncTeardown?.()
+      this.compareSyncTeardown = this.wireCompareSync(this.outerView, this.outerViewCompare)
     } else {
       this.outerView = new OuterCityView({
         ...this.options.outer,
@@ -942,10 +1020,17 @@ export class LocalVisionApp {
   }
 
   private destroyActiveView(): void {
+    this.compareSyncTeardown?.()
+    this.compareSyncTeardown = null
     this.innerView?.destroy()
     this.innerView = null
     this.outerView?.destroy()
     this.outerView = null
+    this.outerViewCompare?.destroy()
+    this.outerViewCompare = null
+    // viewContainerEl reused — reset its display so it doesn't keep the
+    // compare-mode flex layout when we re-mount in single-view mode.
+    if (this.viewContainerEl) this.viewContainerEl.style.display = ''
   }
 
   private forwardListeners(view: InnerCityView | OuterCityView): void {
@@ -1355,6 +1440,68 @@ export class LocalVisionApp {
     const open = this.settingsPanelEl.style.display !== 'none'
     this.settingsPanelEl.style.display = open ? 'none' : ''
     this.settingsBtn.classList.toggle('lv-active', !open)
+  }
+
+  // ── Comparison mode ─────────────────────────────────────────────────────────
+
+  /**
+   * Switch the body between "single map + chart panel" and "two
+   * side-by-side maps". On enter, mounts a second OuterCityView with the
+   * same binding but its own KPI selector. On exit, tears it down and
+   * re-mounts the normal single-view layout.
+   */
+  private toggleCompareMode(): void {
+    if (!this.selectedCity || !this.outerView) return
+    this.compareEnabled = !this.compareEnabled
+    this.compareBtn.classList.toggle('lv-active', this.compareEnabled)
+    // Re-mount the active view in the new layout
+    this.mountView(this.activeView)
+  }
+
+  /**
+   * After both compare-mode views are mounted, attach 'move' listeners
+   * so panning / zooming one mirrors to the other. Reentrancy-safe: a
+   * `syncing` flag prevents the secondary view's reflected move event
+   * from triggering an infinite loop. Returns a teardown that detaches
+   * the listeners — called on compare-mode exit.
+   */
+  private wireCompareSync(a: OuterCityView, b: OuterCityView): () => void {
+    const mapA = a.getMap()
+    const mapB = b.getMap()
+    let syncing = false
+    const onA = () => {
+      if (syncing) return
+      syncing = true
+      mapB.jumpTo({ center: mapA.getCenter(), zoom: mapA.getZoom(), bearing: mapA.getBearing(), pitch: mapA.getPitch() })
+      syncing = false
+    }
+    const onB = () => {
+      if (syncing) return
+      syncing = true
+      mapA.jumpTo({ center: mapB.getCenter(), zoom: mapB.getZoom(), bearing: mapB.getBearing(), pitch: mapB.getPitch() })
+      syncing = false
+    }
+    mapA.on('move', onA)
+    mapB.on('move', onB)
+    return () => {
+      mapA.off('move', onA)
+      mapB.off('move', onB)
+    }
+  }
+
+  /**
+   * Pick a sensible "second KPI" for compare mode. Prefers the second
+   * compatible KPI in the binding's variable list (skipping the active
+   * one). Falls back to the active KPI when the binding only has one.
+   */
+  private pickCompareKpi(binding: import('../data/types').DataBinding, primaryKpi: string): string {
+    const level = binding.table.meta?.geographyLevel
+    const compatible = binding.table.variables.filter((v) => {
+      if (!level || !v.availableAtLevels || v.availableAtLevels.length === 0) return true
+      return v.availableAtLevels.includes(level)
+    })
+    const secondary = compatible.find((v) => v.key !== primaryKpi) ?? compatible[0]
+    return secondary?.key ?? primaryKpi
   }
 
   /**
