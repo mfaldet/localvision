@@ -5,26 +5,61 @@
   "type": "module",
   "main": "./dist/localvision.umd.cjs",
   "module": "./dist/localvision.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/localvision.js",
       "require": "./dist/localvision.umd.cjs"
     },
     "./styles": "./dist/style.css"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build": "tsc --noEmit -p tsconfig.lib.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "keywords": [
+    "data-visualization",
+    "choropleth",
+    "census",
+    "acs",
+    "maplibre",
+    "geospatial",
+    "community-data",
+    "dashboard"
+  ],
+  "author": "Mac Faldet <MacFaldet@focaldataworks.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mfaldet/localvision.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mfaldet/localvision/issues"
+  },
+  "homepage": "https://github.com/mfaldet/localvision#readme",
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@observablehq/plot": "^0.6.16",
     "maplibre-gl": "^4.7.1"
   },
   "devDependencies": {
+    "happy-dom": "^15.11.7",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
-    "vite-plugin-dts": "^4.3.0"
+    "vite-plugin-dts": "^4.3.0",
+    "vitest": "^2.1.9"
   }
 }
