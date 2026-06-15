@@ -1,0 +1,11 @@
+/* Bundled widget styles. The JS library injects its own internal
+   stylesheet for the dashboard; this file is just the container shim
+   so the widget renders cleanly in narrow Jupyter cells. */
+
+.localvision-widget-host {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid #2D3148;
+}

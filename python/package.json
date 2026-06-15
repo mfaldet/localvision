@@ -1,0 +1,14 @@
+{
+  "name": "localvision-widget",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build config for the LocalVision anywidget JS bundle.",
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "typescript": "^5.0.0"
+  }
+}
