@@ -11,6 +11,7 @@ import type { DataBinding } from '../data/types'
 import { SelectionStore } from '../state/selection'
 import { resolveTheme, applyThemeToDom, type ResolvedTheme } from '../theme/tokens'
 import { rafThrottle, debounce } from '../util/throttle'
+import { computeDistributionStats, type DistributionStats } from '../util/aggregate'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '../theme/styles.css'
@@ -116,6 +117,8 @@ export class OuterCityView {
   private scrubMapUpdate!: ((time: string | number) => void) & { cancel: () => void }
   /** Debounced panel re-render for time scrubbing. Created in constructor. */
   private scrubPanelUpdate!: (() => void) & { cancel: () => void; flush: () => void }
+  /** Memoized distribution stats, keyed by `${kpiId}|${time}|${count}`. */
+  private statsCache = new Map<string, DistributionStats>()
 
   constructor(options: OuterCityOptions) {
     this.theme = resolveTheme(options.theme)
@@ -279,6 +282,8 @@ export class OuterCityView {
    */
   updateBinding(binding: DataBinding): void {
     this.activeBinding = binding
+    // New geography → previously-cached distribution stats no longer apply.
+    this.statsCache.clear()
     // Reset currentTime: prefer the most recent if the new binding is temporal
     const times = binding.table.timeAxis?.times
     this.currentTime = times ? times[times.length - 1] : null
@@ -1561,15 +1566,22 @@ export class OuterCityView {
       card.title = `${def.label} — currently active (drives the choropleth)`
     }
 
-    // Gather + summarize values
+    // Gather + summarize values. Stats are memoized per (kpi, time,
+    // community-count) so scrubbing back to a previously-seen frame and
+    // re-renders within a frame don't re-sort large series.
     const values = this.communities
       .map((c) => c.kpis[def.id])
       .filter((v): v is number => typeof v === 'number' && isFinite(v))
 
-    const sorted = [...values].sort((a, b) => a - b)
-    const min = sorted[0] ?? 0
-    const max = sorted[sorted.length - 1] ?? 0
-    const med = sorted[Math.floor(sorted.length / 2)] ?? 0
+    const cacheKey = `${def.id}|${this.currentTime ?? ''}|${values.length}`
+    let distStats = this.statsCache.get(cacheKey)
+    if (!distStats) {
+      distStats = computeDistributionStats(values)
+      this.statsCache.set(cacheKey, distStats)
+    }
+    const min = distStats.min
+    const max = distStats.max
+    const med = distStats.median
 
     // Resolve a single-select for the marker
     const selectedIds = this.selection.getSnapshot().selected
