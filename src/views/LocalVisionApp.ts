@@ -112,8 +112,12 @@ export class LocalVisionApp {
   private placesIndex: PlaceIndexEntry[] = []
   /** Views that have loaded data (and therefore appear in the toggle). */
   private loadedViews = new Set<ViewMode>()
-  /** Cached bindings per view — used when (re-)mounting after a switch. */
-  private viewBindings = new Map<ViewMode, import('../data/types').DataBinding>()
+  /**
+   * Cached bindings keyed by `view|level|stateFips|countyFips`. Lets a
+   * boundary-level swap (county → place → county) reuse a previously-loaded
+   * binding instead of re-running the drillProvider. Cleared on city change.
+   */
+  private viewBindings = new Map<string, import('../data/types').DataBinding>()
   /** Dedicated container for the active view's DOM (so body can also host overlays). */
   private viewContainerEl: HTMLElement | null = null
   private listeners: Partial<{
@@ -954,6 +958,15 @@ export class LocalVisionApp {
    * does the actual fetching; we then mount the view if needed and push it
    * into loadedViews so the toggle gets a proper button for it.
    */
+  /** Cache key for a (view, level, context) binding. */
+  private bindingKey(
+    view: ViewMode,
+    level: string,
+    context: { stateFips: string; countyFips?: string },
+  ): string {
+    return `${view}|${level}|${context.stateFips}|${context.countyFips ?? ''}`
+  }
+
   private async loadView(view: ViewMode): Promise<void> {
     if (!this.options.drillProvider || !this.selectedCity) return
     const city = this.selectedCity
@@ -965,6 +978,32 @@ export class LocalVisionApp {
     const context: { stateFips: string; countyFips?: string } = { stateFips: city.stateFips }
     if (view === 'inner' && this.selectedCityCountyFips) {
       context.countyFips = this.selectedCityCountyFips
+    }
+
+    // Cross-level cache: if we've already loaded this exact (view, level,
+    // context) combination for the current city, reuse it instantly rather
+    // than re-running the drillProvider. (BoundaryLoader + ACS already cache
+    // the network, but this also skips the re-bind + re-clean-labels work.)
+    const key = this.bindingKey(view, level, context)
+    const cached = this.viewBindings.get(key)
+    if (cached) {
+      this.activeView = view
+      this.loadedViews.add(view)
+      this.renderViewToggle()
+      this.syncHeaderForView(view)
+      this.mountView(view)
+      const cachedRoot: DrilldownLevel = {
+        id: `root:${view}:${level}`,
+        label: `${city.displayName} ${LEVEL_META[level]?.label ?? level}`,
+        level,
+        context,
+        parent: { geoid: city.geoid, label: city.displayName },
+      }
+      this.drilldown.setRoot(cachedRoot, cached)
+      this.breadcrumbEl.style.display = ''
+      this.syncTimeForBinding(cached)
+      if (this.selectedCityFeature) this.outerView?.setCityFocus(this.selectedCityFeature)
+      return
     }
 
     this.loadingTarget = {
@@ -981,8 +1020,9 @@ export class LocalVisionApp {
       })
       if (!binding) return
 
-      // Cache binding so re-mounts (after view switch) reuse it
-      this.viewBindings.set(view, binding)
+      // Cache binding keyed by (view, level, context) so re-mounts AND
+      // level swaps back to this combination reuse it.
+      this.viewBindings.set(key, binding)
 
       // Activate this view
       this.activeView = view
@@ -1042,7 +1082,13 @@ export class LocalVisionApp {
     const container = this.viewContainerEl
 
     const cityFirst = !!this.selectedCity
-    const cachedBinding = this.viewBindings.get(view)
+    // Resolve the cached binding for the current (view, level, context).
+    const mvLevel = view === 'outer' ? this.outerBoundary : this.innerBoundary
+    const mvContext: { stateFips: string; countyFips?: string } = {
+      stateFips: this.selectedCity?.stateFips ?? this.options.boundaryContext?.stateFips ?? '',
+    }
+    if (view === 'inner' && this.selectedCityCountyFips) mvContext.countyFips = this.selectedCityCountyFips
+    const cachedBinding = this.viewBindings.get(this.bindingKey(view, mvLevel, mvContext))
     const optionsBinding = (this.options.outer as { binding?: import('../data/types').DataBinding }).binding
 
     // City-first: both views use OuterCityView (Inner is just a finer scope).
