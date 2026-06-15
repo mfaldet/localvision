@@ -1,0 +1,18 @@
+# Built artefacts (regenerated via `npm run build` / `hatch build`)
+localvision_py/static/widget.js.map
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
