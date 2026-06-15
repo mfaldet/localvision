@@ -92,6 +92,9 @@ export type { TimeState, TimeListener, TimeValue } from './state/time'
 export { AnnotationStore } from './state/annotations'
 export type { AnnotationMarker, Bookmark, AnnotationState, AnnotationListener } from './state/annotations'
 
+// ─── Performance utilities (Bundle 11) ───────────────────────────────────────
+export { rafThrottle, debounce } from './util/throttle'
+
 // ─── Data Foundation (Bundle 1) ──────────────────────────────────────────────
 export {
   CensusACS,
