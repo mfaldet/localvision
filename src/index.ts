@@ -9,6 +9,10 @@ export type { LayerPreset, LayerType, OverpassFetchOptions } from './layers/inde
 // ─── Export & sharing (Bundle 8) ─────────────────────────────────────────────
 export { exportMapPng, exportAppPng, readUrlState, writeUrlState, encodeUrlState } from './export/index'
 export type { UrlState } from './export/index'
+
+// ─── Dashboard templates (Bundle 15) ─────────────────────────────────────────
+export { DASHBOARD_TEMPLATES, TEMPLATE_IDS, getTemplate } from './templates/index'
+export type { DashboardTemplate } from './templates/index'
 export { LocalVisionApp } from './views/LocalVisionApp'
 
 export type {
