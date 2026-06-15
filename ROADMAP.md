@@ -2,6 +2,17 @@
 
 A prioritized plan for getting LocalVision from "promising skeleton" to "full-sized library." Each entry describes a **feature bundle** — a cohesive set of features that, shipped together, unlocks a new capability for users.
 
+## Status
+
+**12 of 15 bundles shipped** (Wave 1, Wave 2, most of Waves 3 & 4):
+
+- ✅ Wave 1: Data Foundation · Cross-filtering · Drill-down · Time Dimension
+- ✅ Wave 2: Custom Layers · Comparison Mode · Python Bridge · Export & Sharing
+- ✅ Wave 3 (partial): Theming · Accessibility · _Annotation + Performance deferred_
+- ✅ Wave 4 (partial): Quality & Release · Templates · _Full docs site deferred_
+
+Mark legend: ✅ shipped, 🚧 in progress, blank = not started.
+
 ## Current state
 
 What's in place (or in flight):
@@ -34,7 +45,7 @@ Effort scale: **S** = ~1 day · **M** = 2–3 days · **L** = 3–7 days · **XL
 
 These four bundles together transform the library from "pretty shell" into something a researcher could actually use to study a community.
 
-### 1. Data Foundation [L]
+### 1. Data Foundation [L]  ✅
 
 **Capability:** Bind real tabular data (CSV/Pandas/Census ACS) to Census geographies. Stop hand-writing community objects.
 
@@ -51,7 +62,7 @@ These four bundles together transform the library from "pretty shell" into somet
 
 **After:** Try binding the datasets you gathered, report friction. Decide if any of the test datasets reveal a missing data type.
 
-### 2. Cross-filtering / Interlinking [M]
+### 2. Cross-filtering / Interlinking [M]  ✅
 
 **Capability:** The "linked KPIs" promise. Click in a chart → highlight on the map. Brush on the map → filter the charts.
 
@@ -68,7 +79,7 @@ These four bundles together transform the library from "pretty shell" into somet
 
 **After:** Pressure-test with real data. Identify any slow-feeling interactions for performance bundle later.
 
-### 3. Hierarchical Drill-down [M]
+### 3. Hierarchical Drill-down [M]  ✅
 
 **Capability:** Click a county → zoom in + load its tracts. Click a tract → zoom in + load its block groups. Breadcrumb to navigate back.
 
@@ -84,7 +95,7 @@ These four bundles together transform the library from "pretty shell" into somet
 
 **After:** Validate drill paths feel natural. Identify hierarchies that break (e.g., Virginia's independent cities).
 
-### 4. Time Dimension [M]
+### 4. Time Dimension [M]  ✅
 
 **Capability:** Animated playback of community metrics over time. Time slider, year-over-year deltas, small-multiples.
 
@@ -109,7 +120,7 @@ These four bundles together transform the library from "pretty shell" into somet
 
 These bundles broaden the library's audience and use cases beyond a single-purpose dashboard.
 
-### 5. Custom Layers System [M]
+### 5. Custom Layers System [M]  ✅
 
 **Capability:** Add POI / transit / park / road / user-GeoJSON layers on top of community data.
 
@@ -125,7 +136,7 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 **After:** Test with custom POI data. Resolve any tooltip-vs-tooltip interaction conflicts.
 
-### 6. Comparison Mode [L]
+### 6. Comparison Mode [L]  ✅
 
 **Capability:** Side-by-side maps. Compare 2 KPIs, or 2 years, or 2 areas — with synchronized pan/zoom.
 
@@ -141,7 +152,7 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 **After:** Test cognitive load — is side-by-side too much? Decide if comparison should be its own view or a mode.
 
-### 7. Python Bridge (anywidget) [L]
+### 7. Python Bridge (anywidget) [L]  ✅
 
 **Capability:** Use LocalVision from Jupyter / Python with pandas DataFrames.
 
@@ -158,7 +169,7 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 **After:** Stress-test with a real notebook workflow. Identify any Python-side helpers that are missing.
 
-### 8. Export & Sharing [M]
+### 8. Export & Sharing [M]  ✅
 
 **Capability:** Export the current dashboard as PNG / SVG / PDF. Encode app state in shareable URLs.
 
@@ -197,7 +208,7 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 **After:** Test storytelling workflows end-to-end. Identify annotation-vs-data conflicts.
 
-### 10. Theming & Customization [S]
+### 10. Theming & Customization [S]  ✅
 
 **Capability:** Multiple themes (light + dark + brand). Color-blind palettes. Customization API.
 
@@ -225,7 +236,7 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 **After:** Measure against baseline. Document tradeoffs (bundle size, memory).
 
-### 12. Accessibility [M]
+### 12. Accessibility [M]  ✅
 
 **Capability:** Keyboard navigation, screen reader labels, WCAG AA contrast.
 
@@ -247,7 +258,7 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 Public release.
 
-### 13. Developer Experience & Docs [L]
+### 13. Developer Experience & Docs [L]  🚧 (README + guides shipped; full docs site deferred)
 
 **Capability:** Full docs site with API reference, guides, gallery.
 
@@ -261,7 +272,7 @@ Public release.
 
 **After:** Get feedback from first external user. Iterate on guide ordering.
 
-### 14. Quality & Release [M]
+### 14. Quality & Release [M]  ✅
 
 **Capability:** First public npm release with CI, tests, semver.
 
@@ -276,7 +287,7 @@ Public release.
 
 **After:** Monitor first downloads. Triage early GitHub issues.
 
-### 15. Real-world Templates [M]
+### 15. Real-world Templates [M]  ✅
 
 **Capability:** Opinionated dashboards out of the box.
 
