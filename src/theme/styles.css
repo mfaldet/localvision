@@ -1116,3 +1116,32 @@
 .lv-compare-right .lv-kpi-selector {
   padding: 8px 12px;
 }
+
+/* ── Export button ──────────────────────────────────────────────────────── */
+
+.lv-export-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lv-color-surface-elevated);
+  color: var(--lv-color-text-muted);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.lv-export-btn:hover {
+  background: var(--lv-color-bg);
+  color: var(--lv-color-text);
+}
+
+.lv-export-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
