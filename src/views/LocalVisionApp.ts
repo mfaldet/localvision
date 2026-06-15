@@ -14,6 +14,7 @@ import { LAYER_PRESETS } from '../layers/presets'
 import { fetchOverpassGeoJson } from '../layers/overpass'
 import { exportMapPng, exportAppPng } from '../export/png'
 import { readUrlState, writeUrlState, type UrlState } from '../export/url-state'
+import { getTemplate } from '../templates/presets'
 import type { GeoJsonFeature } from '../types'
 import { SelectionStore } from '../state/selection'
 import {
@@ -112,6 +113,40 @@ export class LocalVisionApp {
   private listeners: Partial<{
     [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[]
   }> = {}
+
+  /**
+   * Bootstrap a LocalVisionApp from a curated dashboard template.
+   *
+   * Templates encode a set of ACS variables + display defaults for a
+   * specific domain (Equity, Housing, Economic, Community Profile). The
+   * `container` + any of `defaultView` / `drillProvider` / `theme` you
+   * pass through `options` override the template's choices.
+   *
+   * Example:
+   *   const app = LocalVisionApp.fromTemplate('equity', {
+   *     container: '#app',
+   *     boundaryContext: { stateFips: '27' },
+   *     outer: { binding },
+   *     inner: { boundary: {...}, kpis: [...], charts: [...] },
+   *     drillProvider: async ({ level, parent, context }) => { ... },
+   *   })
+   */
+  static fromTemplate(
+    name: string,
+    options: LocalVisionAppOptions,
+  ): LocalVisionApp {
+    const t = getTemplate(name)
+    const merged: LocalVisionAppOptions = {
+      ...options,
+      defaultOuterBoundary: options.defaultOuterBoundary ?? t.defaultOuterBoundary,
+      defaultInnerBoundary: options.defaultInnerBoundary ?? t.defaultInnerBoundary,
+      outer: {
+        ...options.outer,
+        activeKpi: options.outer?.activeKpi ?? t.activeKpi,
+      },
+    }
+    return new LocalVisionApp(merged)
+  }
 
   constructor(options: LocalVisionAppOptions) {
     this.options = options
