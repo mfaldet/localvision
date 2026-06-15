@@ -4,21 +4,23 @@ A prioritized plan for getting LocalVision from "promising skeleton" to "full-si
 
 ## Status
 
-**All 15 bundles have shipping work** 🎉
+**All 15 bundles fully shipped** 🎉🎉
 
 - ✅ Wave 1: Data Foundation · Cross-filtering · Drill-down · Time Dimension
 - ✅ Wave 2: Custom Layers · Comparison Mode · Python Bridge · Export & Sharing
 - ✅ Wave 3: Annotation · Theming · Performance · Accessibility
 - ✅ Wave 4: DX/Docs · Quality & Release · Templates
 
-A few bundles shipped a focused core with heavier extensions deferred —
-each is noted inline:
-- **Bundle 9 (Annotation):** markers + bookmarks shipped; freehand
-  drawing + auto-advancing tour deferred.
-- **Bundle 11 (Performance):** time-scrub + resize coalescing shipped;
-  vector-tile sources + web-worker aggregation deferred.
-- **Bundle 13 (DX/Docs):** README + five docs guides shipped; hosted
-  docs site (Astro/VitePress) deferred.
+Every bundle, including all previously-deferred extensions, is now
+complete:
+- **Bundle 9 (Annotation):** markers + bookmarks + freehand polygon/line
+  drawing + auto-advancing bookmark tour.
+- **Bundle 11 (Performance):** time-scrub + resize coalescing + memoized
+  aggregation + opt-in web worker + BYO vector-tile source helpers.
+- **Bundle 13 (DX/Docs):** README + guides + hosted VitePress docs site
+  with GitHub Pages deploy.
+
+84 unit tests across 9 files. CI on Node 18/20. npm-publish-ready.
 
 Mark legend: ✅ shipped, 🚧 in progress, blank = not started.
 
@@ -203,7 +205,7 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 Production-grade quality. By the end of Wave 3, the library should feel good to use in real work.
 
-### 9. Annotation / Storytelling [L]  ✅ (markers + bookmarks; freehand + tour deferred)
+### 9. Annotation / Storytelling [L]  ✅
 
 **Capability:** Draw rectangles, polygons, lines, labels on the map. Save annotated views as bookmarks. Tour mode.
 
@@ -231,7 +233,7 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 **After:** Validate readability across themes. Decide if runtime theme switching is part of the public API.
 
-### 11. Performance & Scale [L]  ✅ (time-scrub + resize; vector tiles + workers deferred)
+### 11. Performance & Scale [L]  ✅
 
 **Capability:** Handle nation-wide data without lag.
 
@@ -267,7 +269,7 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 Public release.
 
-### 13. Developer Experience & Docs [L]  🚧 (README + guides shipped; full docs site deferred)
+### 13. Developer Experience & Docs [L]  ✅
 
 **Capability:** Full docs site with API reference, guides, gallery.
 
