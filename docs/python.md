@@ -1,6 +1,6 @@
 # Python / Jupyter
 
-LocalVision ships a Python wrapper as a sibling package — see [`python/`](../python/) for the source.
+LocalVision ships a Python wrapper as a sibling package — see [`python/`](https://github.com/mfaldet/localvision/tree/main/python) for the source.
 
 ## Quick start
 
@@ -55,4 +55,4 @@ The widget time slider activates; play it to animate the choropleth.
 
 ## See also
 
-Full Python docs, install notes, and limitations: [`python/README.md`](../python/README.md).
+Full Python docs, install notes, and limitations: [`python/README.md`](https://github.com/mfaldet/localvision/blob/main/python/README.md).
