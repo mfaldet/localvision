@@ -94,6 +94,15 @@ export type { AnnotationMarker, AnnotationShape, Bookmark, AnnotationState, Anno
 
 // ─── Performance utilities (Bundle 11) ───────────────────────────────────────
 export { rafThrottle, debounce } from './util/throttle'
+export { computeDistributionStats, computeManyDistributions } from './util/aggregate'
+export type { DistributionStats } from './util/aggregate'
+export { AggregationClient } from './util/aggregate-client'
+export {
+  buildVectorSource,
+  applyDataToVectorTiles,
+  vectorChoroplethExpression,
+} from './geo/vector-tiles'
+export type { VectorBoundaryConfig } from './geo/vector-tiles'
 
 // ─── Data Foundation (Bundle 1) ──────────────────────────────────────────────
 export {
