@@ -1145,3 +1145,33 @@
   opacity: 0.6;
   cursor: wait;
 }
+
+/* ── Light theme overrides (applied when .lv-theme-light is on root) ───── */
+
+.lv-theme-light .lv-loading-overlay {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.lv-theme-light .lv-loading-card {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.lv-theme-light .lv-tooltip {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.lv-theme-light .lv-settings-panel {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.lv-theme-light .lv-loading-progress-bar {
+  background: var(--lv-color-primary);
+}
+
+/* Map attribution control needs different styling in light mode */
+.lv-theme-light .lv-map-pane .maplibregl-ctrl-attrib {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--lv-color-text);
+}

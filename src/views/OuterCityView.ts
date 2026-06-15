@@ -29,6 +29,10 @@ export const COLOR_SCHEMES: Record<string, string[]> = {
   viridis: ['#440154', '#3b528b', '#21908c', '#5dc863', '#fde725'],
   magma:   ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'],
   redblue: ['#67001f', '#d6604d', '#fddbc7', '#f7f7f7', '#d1e5f0', '#4393c3', '#053061'],
+  // Color-blind-safe sequential (ColorBrewer YlGnBu)
+  cbSafeSequential: ['#ffffd9', '#edf8b1', '#c7e9b4', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8', '#253494', '#081d58'],
+  // Color-blind-safe diverging (ColorBrewer RdYlBu)
+  cbSafeDiverging:  ['#a50026', '#d73027', '#f46d43', '#fdae61', '#fee090', '#e0f3f8', '#abd9e9', '#74add1', '#4575b4', '#313695'],
 }
 
 export type ColorSchemeName = keyof typeof COLOR_SCHEMES
