@@ -37,7 +37,7 @@ export type {
   LocalVisionEventMap,
 } from './types'
 
-export { DEFAULT_THEME } from './theme/tokens'
+export { DEFAULT_THEME, LIGHT_THEME, THEME_PRESETS, OKABE_ITO_PALETTE } from './theme/tokens'
 export type { ResolvedTheme } from './theme/tokens'
 
 export {

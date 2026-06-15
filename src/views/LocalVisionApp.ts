@@ -1658,6 +1658,8 @@ export class LocalVisionApp {
       { key: 'viridis', label: 'Viridis',          palette: ['#440154', '#21908c', '#fde725'] },
       { key: 'magma',   label: 'Magma',            palette: ['#000004', '#b73779', '#fcfdbf'] },
       { key: 'redblue', label: 'Red ↔ Blue',       palette: ['#67001f', '#f7f7f7', '#053061'] },
+      { key: 'cbSafeSequential', label: 'CB-safe sequential', palette: ['#ffffd9', '#41b6c4', '#081d58'] },
+      { key: 'cbSafeDiverging',  label: 'CB-safe diverging',  palette: ['#a50026', '#fee090', '#313695'] },
     ]
     schemes.forEach((s) => {
       const btn = document.createElement('button')
