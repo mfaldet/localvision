@@ -12,6 +12,8 @@ import { getStateMeta, resolveStateFips } from '../geo/fips'
 import { bbox, bboxCenter, findFeatureContaining } from '../geo/spatial'
 import { LAYER_PRESETS } from '../layers/presets'
 import { fetchOverpassGeoJson } from '../layers/overpass'
+import { exportMapPng, exportAppPng } from '../export/png'
+import { readUrlState, writeUrlState, type UrlState } from '../export/url-state'
 import type { GeoJsonFeature } from '../types'
 import { SelectionStore } from '../state/selection'
 import {
@@ -54,6 +56,7 @@ export class LocalVisionApp {
   private settingsBtn!: HTMLButtonElement
   private settingsPanelEl!: HTMLElement
   private compareBtn!: HTMLButtonElement
+  private exportBtn!: HTMLButtonElement
   private bodyEl: HTMLElement
   /** When true, the body shows two side-by-side OuterCityViews. */
   private compareEnabled = false
@@ -174,6 +177,15 @@ export class LocalVisionApp {
     this.compareBtn.style.display = 'none' // shown once a city is loaded
     this.compareBtn.addEventListener('click', () => this.toggleCompareMode())
     this.headerEl.appendChild(this.compareBtn)
+
+    // 6.5. Export — downloads the current view as a PNG
+    this.exportBtn = document.createElement('button')
+    this.exportBtn.className = 'lv-export-btn'
+    this.exportBtn.title = 'Export view as PNG'
+    this.exportBtn.textContent = '⤓'
+    this.exportBtn.style.display = 'none'
+    this.exportBtn.addEventListener('click', () => void this.handleExportClick())
+    this.headerEl.appendChild(this.exportBtn)
 
     // 7. Display-settings gear (far right) — toggles the settings panel
     this.settingsBtn = document.createElement('button')
@@ -320,11 +332,45 @@ export class LocalVisionApp {
           this.placesIndex = entries
           this.citySearchEl.placeholder = 'Pick a city (e.g. Rosemount, MN)'
           this.citySearchEl.disabled = false
+          // Once the index is ready, try to restore from URL hash. The
+          // index makes city-by-geoid lookup instant; no need to refetch.
+          void this.restoreFromUrlIfAny()
         })
         .catch((err) => {
           console.error('[LocalVision] Failed to load US places index:', err)
           this.citySearchEl.placeholder = 'City search unavailable'
         })
+    }
+  }
+
+  /**
+   * On boot, if the URL hash carries a city + view state, restore it.
+   * The places index is required to map a GEOID back to a PlaceIndexEntry,
+   * so this is called after the index resolves.
+   */
+  private async restoreFromUrlIfAny(): Promise<void> {
+    const state = readUrlState()
+    if (!state.city) return
+    const entry = this.placesIndex.find((p) => p.geoid === state.city)
+    if (!entry) {
+      console.warn(`[LocalVision] URL state references unknown city geoid: ${state.city}`)
+      return
+    }
+    // Apply pre-selection state so loadView picks them up
+    if (state.view) this.activeView = state.view
+    if (state.level) {
+      if (state.view === 'outer') this.outerBoundary = state.level as OuterLevel
+      else this.innerBoundary = state.level as InnerLevel
+    }
+    await this.selectCity(entry)
+    // After select: optionally toggle compare mode, set KPIs, set time
+    if (state.compare && !this.compareEnabled) this.toggleCompareMode()
+    if (state.kpi) this.outerView?.setActiveKpi?.(state.kpi)
+    if (state.time && this.time.getSnapshot().times.length > 0) {
+      const t = state.time as string
+      // Try numeric coerce first since temporal data is usually years
+      const n = Number(t)
+      this.time.setCurrent(isFinite(n) ? n : t)
     }
   }
 
@@ -720,6 +766,7 @@ export class LocalVisionApp {
     this.boundarySelectEl.style.display = ''
     this.settingsBtn.style.display = ''
     this.compareBtn.style.display = ''
+    this.exportBtn.style.display = ''
 
     // Reset state for the new city
     this.loadedViews.clear()
@@ -762,6 +809,9 @@ export class LocalVisionApp {
       // bbox. Layer rows in the settings panel reflect persisted state
       // already; we just need to actually fetch & add the layers here.
       void this.replayPersistedLayers()
+
+      // Write the new selection into the URL hash so the link is shareable
+      this.syncUrlState()
     } catch (err) {
       errored = true
       console.error('[LocalVision] City selection failed:', err)
@@ -1456,6 +1506,76 @@ export class LocalVisionApp {
     this.compareBtn.classList.toggle('lv-active', this.compareEnabled)
     // Re-mount the active view in the new layout
     this.mountView(this.activeView)
+    this.syncUrlState()
+  }
+
+  // ── Export & URL state ──────────────────────────────────────────────────────
+
+  /**
+   * PNG export — captures whatever's most useful for the user given the
+   * current mode. Single-view: full app screenshot (map + chart panel +
+   * header). Compare-mode: just the map area, since the side-by-side
+   * arrangement is the artefact being shared.
+   */
+  async handleExportClick(): Promise<void> {
+    if (!this.outerView) return
+    this.exportBtn.disabled = true
+    this.exportBtn.textContent = '…'
+    try {
+      const city = this.selectedCity?.displayName?.replace(/[^a-z0-9]+/gi, '-').toLowerCase() ?? 'view'
+      const stamp = new Date().toISOString().slice(0, 10)
+      const filename = `localvision-${city}-${stamp}.png`
+      if (this.compareEnabled) {
+        await exportMapPng(this.outerView.getMap(), filename)
+      } else {
+        await exportAppPng(this.root, filename)
+      }
+    } catch (err) {
+      console.error('[LocalVision] export failed:', err)
+    } finally {
+      this.exportBtn.disabled = false
+      this.exportBtn.textContent = '⤓'
+    }
+  }
+
+  /** Snapshot the current navigation state into a UrlState. */
+  private snapshotUrlState(): UrlState {
+    const state: UrlState = {}
+    if (this.selectedCity) {
+      state.city = this.selectedCity.geoid
+      state.stateFips = this.selectedCity.stateFips
+    }
+    state.view = this.activeView
+    state.level = this.activeView === 'outer' ? this.outerBoundary : this.innerBoundary
+    if (this.outerView) {
+      // Read the active KPI from the binding's table via the view's getStyle/state.
+      // Simplest path: pull from the displayed kpi pill which carries `lv-active`.
+      const active = this.kpiSlotEl.querySelector('.lv-kpi-pill.lv-active') as HTMLElement | null
+      const kpi = active?.dataset?.['kpi']
+      if (kpi) state.kpi = kpi
+    }
+    const t = this.time.currentValue()
+    if (t != null) state.time = String(t)
+    if (this.compareEnabled) {
+      state.compare = true
+      if (this.compareActiveKpi) state.compareKpi = this.compareActiveKpi
+    }
+    return state
+  }
+
+  /** Write the current state into the URL hash. */
+  private syncUrlState(): void {
+    writeUrlState(this.snapshotUrlState())
+  }
+
+  /**
+   * Restore navigation from the URL hash on first load. Returns the
+   * parsed state for the caller to act on (city selection, view switch,
+   * level swap). Doesn't directly mutate the app — the caller decides
+   * what to apply and when.
+   */
+  getInitialUrlState(): UrlState {
+    return readUrlState()
   }
 
   /**
