@@ -173,6 +173,8 @@ export class LocalVisionApp {
     this.compareBtn = document.createElement('button')
     this.compareBtn.className = 'lv-compare-btn'
     this.compareBtn.title = 'Toggle side-by-side comparison'
+    this.compareBtn.setAttribute('aria-label', 'Toggle side-by-side comparison')
+    this.compareBtn.setAttribute('aria-pressed', 'false')
     this.compareBtn.textContent = '⇆'
     this.compareBtn.style.display = 'none' // shown once a city is loaded
     this.compareBtn.addEventListener('click', () => this.toggleCompareMode())
@@ -182,6 +184,7 @@ export class LocalVisionApp {
     this.exportBtn = document.createElement('button')
     this.exportBtn.className = 'lv-export-btn'
     this.exportBtn.title = 'Export view as PNG'
+    this.exportBtn.setAttribute('aria-label', 'Export view as PNG')
     this.exportBtn.textContent = '⤓'
     this.exportBtn.style.display = 'none'
     this.exportBtn.addEventListener('click', () => void this.handleExportClick())
@@ -191,6 +194,9 @@ export class LocalVisionApp {
     this.settingsBtn = document.createElement('button')
     this.settingsBtn.className = 'lv-settings-btn'
     this.settingsBtn.title = 'Display settings'
+    this.settingsBtn.setAttribute('aria-label', 'Open display settings panel')
+    this.settingsBtn.setAttribute('aria-expanded', 'false')
+    this.settingsBtn.setAttribute('aria-controls', 'lv-settings-panel')
     this.settingsBtn.textContent = '⚙'
     this.settingsBtn.style.display = 'none' // shown once a city is loaded
     this.settingsBtn.addEventListener('click', () => this.toggleSettingsPanel())
@@ -200,6 +206,9 @@ export class LocalVisionApp {
 
     // Settings panel — absolute-positioned popover anchored to header right
     this.settingsPanelEl = this.buildSettingsPanel()
+    this.settingsPanelEl.id = 'lv-settings-panel'
+    this.settingsPanelEl.setAttribute('role', 'region')
+    this.settingsPanelEl.setAttribute('aria-label', 'Display settings')
     this.settingsPanelEl.style.display = 'none'
     this.root.appendChild(this.settingsPanelEl)
 
@@ -261,6 +270,9 @@ export class LocalVisionApp {
     // Loading overlay (mounted but hidden until a fetch is in-flight)
     this.loadingOverlayEl = document.createElement('div')
     this.loadingOverlayEl.className = 'lv-loading-overlay'
+    this.loadingOverlayEl.setAttribute('role', 'status')
+    this.loadingOverlayEl.setAttribute('aria-live', 'polite')
+    this.loadingOverlayEl.setAttribute('aria-atomic', 'true')
     this.loadingOverlayEl.style.display = 'none'
     const card = document.createElement('div')
     card.className = 'lv-loading-card'
@@ -665,9 +677,17 @@ export class LocalVisionApp {
     input.placeholder = 'Loading US cities…'
     input.disabled = true
     input.autocomplete = 'off'
+    input.setAttribute('role', 'combobox')
+    input.setAttribute('aria-label', 'Search for a US city')
+    input.setAttribute('aria-autocomplete', 'list')
+    input.setAttribute('aria-expanded', 'false')
+    input.setAttribute('aria-controls', 'lv-city-search-dropdown')
 
     const dropdown = document.createElement('div')
     dropdown.className = 'lv-city-search-dropdown'
+    dropdown.id = 'lv-city-search-dropdown'
+    dropdown.setAttribute('role', 'listbox')
+    dropdown.setAttribute('aria-label', 'Matching cities')
     dropdown.style.display = 'none'
 
     wrap.appendChild(input)
@@ -689,6 +709,7 @@ export class LocalVisionApp {
       // selected-city name if the user cleared and didn't pick a new one.
       setTimeout(() => {
         dropdown.style.display = 'none'
+        input.setAttribute('aria-expanded', 'false')
         if (input.value.trim() === '' && this.selectedCity) {
           input.value = this.selectedCity.displayName
         }
@@ -706,6 +727,7 @@ export class LocalVisionApp {
     dropdown.innerHTML = ''
     if (q.length < 2 || this.placesIndex.length === 0) {
       dropdown.style.display = 'none'
+      this.citySearchEl.setAttribute('aria-expanded', 'false')
       return
     }
 
@@ -735,6 +757,8 @@ export class LocalVisionApp {
         const opt = document.createElement('button')
         opt.className = 'lv-city-search-option'
         opt.type = 'button'
+        opt.setAttribute('role', 'option')
+        opt.setAttribute('aria-label', `${p.name}, ${p.stateAbbr}`)
         opt.innerHTML = `<strong>${p.name}</strong><span>${p.stateAbbr}</span>`
         opt.addEventListener('mousedown', (e) => {
           e.preventDefault() // prevent input blur before click
@@ -744,6 +768,7 @@ export class LocalVisionApp {
       })
     }
     dropdown.style.display = ''
+    this.citySearchEl.setAttribute('aria-expanded', 'true')
   }
 
   /**
@@ -1490,6 +1515,7 @@ export class LocalVisionApp {
     const open = this.settingsPanelEl.style.display !== 'none'
     this.settingsPanelEl.style.display = open ? 'none' : ''
     this.settingsBtn.classList.toggle('lv-active', !open)
+    this.settingsBtn.setAttribute('aria-expanded', open ? 'false' : 'true')
   }
 
   // ── Comparison mode ─────────────────────────────────────────────────────────
@@ -1504,6 +1530,7 @@ export class LocalVisionApp {
     if (!this.selectedCity || !this.outerView) return
     this.compareEnabled = !this.compareEnabled
     this.compareBtn.classList.toggle('lv-active', this.compareEnabled)
+    this.compareBtn.setAttribute('aria-pressed', this.compareEnabled ? 'true' : 'false')
     // Re-mount the active view in the new layout
     this.mountView(this.activeView)
     this.syncUrlState()

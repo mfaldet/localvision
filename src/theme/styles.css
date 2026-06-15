@@ -1175,3 +1175,38 @@
   background: rgba(255, 255, 255, 0.7);
   color: var(--lv-color-text);
 }
+
+/* ── Accessibility: focus-visible outlines for keyboard nav ─────────────── */
+
+/*
+ * The :focus-visible pseudo-class fires only for keyboard-driven focus
+ * (not mouse clicks). Gives a clear 2px primary-color outline on every
+ * interactive control without disturbing the mouse experience.
+ */
+.lv-root button:focus-visible,
+.lv-root [role="button"]:focus-visible,
+.lv-root input:focus-visible,
+.lv-root select:focus-visible {
+  outline: 2px solid var(--lv-color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.lv-root .lv-kpi-pill:focus-visible,
+.lv-root .lv-scheme-swatch:focus-visible,
+.lv-root .lv-line-color-swatch:focus-visible {
+  outline-offset: 3px; /* swatches are small; offset more so the ring isn't blocked */
+}
+
+/* Visually-hidden text for screen readers only. Use with .lv-sr-only. */
+.lv-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
