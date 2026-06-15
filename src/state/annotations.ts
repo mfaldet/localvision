@@ -1,13 +1,15 @@
 /**
  * AnnotationStore — subscribable state for storytelling overlays.
  *
- * Two kinds of artefact:
+ * Three kinds of artefact:
  *   - markers   : a labeled pin dropped at a lng/lat. The dashboard
  *                 renders these as map symbols with a text label.
+ *   - shapes    : freehand-drawn polygons or lines (highlight regions,
+ *                 routes, callouts). Rendered as fill / line layers.
  *   - bookmarks : a saved camera + navigation snapshot the user can
  *                 jump back to. Bookmarks form the basis of a "tour".
  *
- * Both persist to localStorage (per the app's persistence convention)
+ * All persist to localStorage (per the app's persistence convention)
  * so a user's annotated view survives reloads. The store itself is
  * storage-agnostic; LocalVisionApp wires the persistence.
  */
@@ -19,6 +21,18 @@ export interface AnnotationMarker {
   /** Display text. */
   label: string
   /** Optional accent color (hex). Defaults applied by the renderer. */
+  color?: string
+}
+
+export interface AnnotationShape {
+  id: string
+  /** 'polygon' (filled region) or 'line' (route / callout). */
+  kind: 'polygon' | 'line'
+  /** Ordered vertices as [lng, lat] pairs. Polygons auto-close on render. */
+  points: [number, number][]
+  /** Optional label shown at the shape's centroid. */
+  label?: string
+  /** Stroke / fill color (hex). Default applied by the renderer. */
   color?: string
 }
 
@@ -42,6 +56,7 @@ export interface Bookmark {
 
 export interface AnnotationState {
   markers: AnnotationMarker[]
+  shapes: AnnotationShape[]
   bookmarks: Bookmark[]
 }
 
@@ -49,13 +64,18 @@ export type AnnotationListener = (state: AnnotationState) => void
 
 export class AnnotationStore {
   private markers: AnnotationMarker[] = []
+  private shapes: AnnotationShape[] = []
   private bookmarks: Bookmark[] = []
   private listeners = new Set<AnnotationListener>()
 
   // ── Reads ────────────────────────────────────────────────────────────────────
 
   getSnapshot(): AnnotationState {
-    return { markers: [...this.markers], bookmarks: [...this.bookmarks] }
+    return {
+      markers: [...this.markers],
+      shapes: [...this.shapes],
+      bookmarks: [...this.bookmarks],
+    }
   }
 
   // ── Hydration (from persistence) ──────────────────────────────────────────────
@@ -63,6 +83,7 @@ export class AnnotationStore {
   /** Replace all state without firing listeners (used on initial load). */
   hydrate(state: Partial<AnnotationState>): void {
     if (state.markers) this.markers = [...state.markers]
+    if (state.shapes) this.shapes = [...state.shapes]
     if (state.bookmarks) this.bookmarks = [...state.bookmarks]
     this.emit()
   }
@@ -89,6 +110,28 @@ export class AnnotationStore {
     if (this.markers.length !== before) this.emit()
   }
 
+  // ── Shapes ───────────────────────────────────────────────────────────────────
+
+  addShape(shape: Omit<AnnotationShape, 'id'> & { id?: string }): AnnotationShape {
+    const created: AnnotationShape = { id: shape.id ?? makeId('s'), ...shape }
+    this.shapes.push(created)
+    this.emit()
+    return created
+  }
+
+  updateShape(id: string, patch: Partial<Omit<AnnotationShape, 'id'>>): void {
+    const s = this.shapes.find((x) => x.id === id)
+    if (!s) return
+    Object.assign(s, patch)
+    this.emit()
+  }
+
+  removeShape(id: string): void {
+    const before = this.shapes.length
+    this.shapes = this.shapes.filter((s) => s.id !== id)
+    if (this.shapes.length !== before) this.emit()
+  }
+
   // ── Bookmarks ─────────────────────────────────────────────────────────────────
 
   addBookmark(bookmark: Omit<Bookmark, 'id'> & { id?: string }): Bookmark {
@@ -108,6 +151,7 @@ export class AnnotationStore {
 
   clear(): void {
     this.markers = []
+    this.shapes = []
     this.bookmarks = []
     this.emit()
   }

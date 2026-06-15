@@ -4,7 +4,18 @@ import { AnnotationStore } from './annotations'
 describe('AnnotationStore', () => {
   it('starts empty', () => {
     const s = new AnnotationStore()
-    expect(s.getSnapshot()).toEqual({ markers: [], bookmarks: [] })
+    expect(s.getSnapshot()).toEqual({ markers: [], shapes: [], bookmarks: [] })
+  })
+
+  it('adds + updates + removes shapes', () => {
+    const s = new AnnotationStore()
+    const sh = s.addShape({ kind: 'polygon', points: [[0, 0], [1, 0], [1, 1]] })
+    expect(sh.id).toBeTruthy()
+    expect(s.getSnapshot().shapes).toHaveLength(1)
+    s.updateShape(sh.id, { label: 'Downtown', color: '#ff0000' })
+    expect(s.getSnapshot().shapes[0].label).toBe('Downtown')
+    s.removeShape(sh.id)
+    expect(s.getSnapshot().shapes).toHaveLength(0)
   })
 
   it('adds a marker with a generated id', () => {
@@ -64,13 +75,14 @@ describe('AnnotationStore', () => {
   it('clears everything', () => {
     const s = new AnnotationStore()
     s.addMarker({ lngLat: [0, 0], label: 'x' })
+    s.addShape({ kind: 'line', points: [[0, 0], [1, 1]] })
     s.addBookmark({
       label: 'b',
       camera: { center: [0, 0], zoom: 1, bearing: 0, pitch: 0 },
       nav: {},
     })
     s.clear()
-    expect(s.getSnapshot()).toEqual({ markers: [], bookmarks: [] })
+    expect(s.getSnapshot()).toEqual({ markers: [], shapes: [], bookmarks: [] })
   })
 
   it('unsubscribe stops notifications', () => {

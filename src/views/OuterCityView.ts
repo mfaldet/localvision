@@ -471,6 +471,215 @@ export class OuterCityView {
     window.addEventListener('keydown', onKey)
   }
 
+  // ── Annotation shapes (freehand polygons / lines) ───────────────────────────
+
+  /**
+   * Replace all annotation shapes (polygons + lines). Polygons render
+   * as a translucent fill + outline; lines as a stroked path. Each
+   * optional label appears at the shape's centroid. Idempotent.
+   */
+  setAnnotationShapes(
+    shapes: { id: string; kind: 'polygon' | 'line'; points: [number, number][]; label?: string; color?: string }[],
+  ): void {
+    const apply = () => {
+      const FILL_SRC = 'lv-ann-shape-fill'
+      const LINE_SRC = 'lv-ann-shape-line'
+      const LABEL_SRC = 'lv-ann-shape-label'
+      const FILL = 'lv-ann-shape-fill-layer'
+      const OUTLINE = 'lv-ann-shape-outline-layer'
+      const LINE = 'lv-ann-shape-line-layer'
+      const LABEL = 'lv-ann-shape-label-layer'
+
+      const polys = shapes.filter((s) => s.kind === 'polygon')
+      const lines = shapes.filter((s) => s.kind === 'line')
+
+      const polyFc = {
+        type: 'FeatureCollection',
+        features: polys.map((s) => ({
+          type: 'Feature',
+          properties: { id: s.id, color: s.color ?? '#fbbf24' },
+          geometry: { type: 'Polygon', coordinates: [closeRing(s.points)] },
+        })),
+      } as unknown as GeoJSON.FeatureCollection
+
+      const lineFc = {
+        type: 'FeatureCollection',
+        features: lines.map((s) => ({
+          type: 'Feature',
+          properties: { id: s.id, color: s.color ?? '#fbbf24' },
+          geometry: { type: 'LineString', coordinates: s.points },
+        })),
+      } as unknown as GeoJSON.FeatureCollection
+
+      const labelFc = {
+        type: 'FeatureCollection',
+        features: shapes
+          .filter((s) => s.label)
+          .map((s) => ({
+            type: 'Feature',
+            properties: { label: s.label, color: s.color ?? '#fbbf24' },
+            geometry: { type: 'Point', coordinates: centroid(s.points) },
+          })),
+      } as unknown as GeoJSON.FeatureCollection
+
+      // Polygons (fill + outline)
+      const existingFill = this.map.getSource(FILL_SRC) as maplibregl.GeoJSONSource | undefined
+      if (existingFill) {
+        existingFill.setData(polyFc)
+      } else {
+        this.map.addSource(FILL_SRC, { type: 'geojson', data: polyFc })
+        this.map.addLayer({
+          id: FILL, type: 'fill', source: FILL_SRC,
+          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.18 },
+        })
+        this.map.addLayer({
+          id: OUTLINE, type: 'line', source: FILL_SRC,
+          paint: { 'line-color': ['get', 'color'], 'line-width': 2 },
+        })
+      }
+
+      // Lines
+      const existingLine = this.map.getSource(LINE_SRC) as maplibregl.GeoJSONSource | undefined
+      if (existingLine) {
+        existingLine.setData(lineFc)
+      } else {
+        this.map.addSource(LINE_SRC, { type: 'geojson', data: lineFc })
+        this.map.addLayer({
+          id: LINE, type: 'line', source: LINE_SRC,
+          paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.9 },
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+        })
+      }
+
+      // Labels
+      const existingLabel = this.map.getSource(LABEL_SRC) as maplibregl.GeoJSONSource | undefined
+      if (existingLabel) {
+        existingLabel.setData(labelFc)
+      } else {
+        this.map.addSource(LABEL_SRC, { type: 'geojson', data: labelFc })
+        this.map.addLayer({
+          id: LABEL, type: 'symbol', source: LABEL_SRC,
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-size': 12,
+            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': '#000000',
+            'text-halo-width': 1.5,
+          },
+        })
+      }
+    }
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
+  /**
+   * Begin freehand shape drawing. `kind` selects polygon (closed) or
+   * line (open). Click adds vertices; double-click finishes; Esc cancels.
+   * A live amber preview follows the cursor. The callback resolves with
+   * the finished point list (>= 2 for lines, >= 3 for polygons) or null
+   * on cancel.
+   */
+  startShapeDrawing(
+    kind: 'polygon' | 'line',
+    onComplete: (points: [number, number][] | null) => void,
+  ): void {
+    this.mapEl.style.cursor = 'crosshair'
+    this.map.doubleClickZoom.disable()
+    const points: [number, number][] = []
+
+    const cleanup = () => {
+      this.mapEl.style.cursor = ''
+      this.map.doubleClickZoom.enable()
+      this.map.off('click', onClick)
+      this.map.off('mousemove', onMove)
+      this.map.off('dblclick', onDbl)
+      window.removeEventListener('keydown', onKey)
+      this.updateShapePreview([], kind)
+    }
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      points.push([e.lngLat.lng, e.lngLat.lat])
+      this.updateShapePreview(points, kind)
+    }
+    const onMove = (e: maplibregl.MapMouseEvent) => {
+      if (points.length === 0) return
+      this.updateShapePreview([...points, [e.lngLat.lng, e.lngLat.lat]], kind)
+    }
+    const onDbl = (e: maplibregl.MapMouseEvent) => {
+      e.preventDefault?.()
+      const min = kind === 'polygon' ? 3 : 2
+      if (points.length < min) {
+        cleanup()
+        onComplete(null)
+        return
+      }
+      cleanup()
+      onComplete([...points])
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        cleanup()
+        onComplete(null)
+      }
+    }
+
+    this.map.on('click', onClick)
+    this.map.on('mousemove', onMove)
+    this.map.on('dblclick', onDbl)
+    window.addEventListener('keydown', onKey)
+  }
+
+  private updateShapePreview(points: [number, number][], kind: 'polygon' | 'line'): void {
+    const SRC = 'lv-shape-preview'
+    const LINE = 'lv-shape-preview-line'
+    const VERTS = 'lv-shape-preview-verts'
+
+    if (points.length === 0) {
+      if (this.map.getLayer(LINE)) this.map.removeLayer(LINE)
+      if (this.map.getLayer(VERTS)) this.map.removeLayer(VERTS)
+      if (this.map.getSource(SRC)) this.map.removeSource(SRC)
+      return
+    }
+
+    // For polygon preview, close the ring visually once we have 3+ pts.
+    const previewLine = kind === 'polygon' && points.length >= 3
+      ? closeRing(points)
+      : points
+
+    const data = {
+      type: 'FeatureCollection',
+      features: [
+        ...(points.length >= 2
+          ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: previewLine } }]
+          : []),
+        ...points.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
+      ],
+    } as unknown as GeoJSON.FeatureCollection
+
+    const existing = this.map.getSource(SRC) as maplibregl.GeoJSONSource | undefined
+    if (existing) {
+      existing.setData(data)
+    } else {
+      this.map.addSource(SRC, { type: 'geojson', data })
+      this.map.addLayer({
+        id: LINE, type: 'line', source: SRC,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': '#fbbf24', 'line-width': 2, 'line-dasharray': [2, 2] },
+      })
+      this.map.addLayer({
+        id: VERTS, type: 'circle', source: SRC,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-color': '#fbbf24', 'circle-radius': 4,
+          'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2,
+        },
+      })
+    }
+  }
+
   // ── Camera snapshot / restore (for bookmarks) ───────────────────────────────
 
   /** Capture the current camera as a plain object (for bookmarks). */
@@ -1543,6 +1752,26 @@ function collectCoords(geometry: CommunityRecord['geojson']['features'][0]['geom
     case 'LineString': return geometry.coordinates
     default: return []
   }
+}
+
+/** Close a vertex ring by repeating the first point if not already closed. */
+function closeRing(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points
+  const [fx, fy] = points[0]
+  const [lx, ly] = points[points.length - 1]
+  return fx === lx && fy === ly ? points : [...points, points[0]]
+}
+
+/** Average of a point list — good enough for placing a shape's label. */
+function centroid(points: [number, number][]): [number, number] {
+  if (points.length === 0) return [0, 0]
+  let sx = 0
+  let sy = 0
+  for (const [x, y] of points) {
+    sx += x
+    sy += y
+  }
+  return [sx / points.length, sy / points.length]
 }
 
 // ── Binding adapters ──────────────────────────────────────────────────────────
