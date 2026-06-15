@@ -90,7 +90,7 @@ export type { TimeState, TimeListener, TimeValue } from './state/time'
 
 // ─── Annotations (Bundle 9) ──────────────────────────────────────────────────
 export { AnnotationStore } from './state/annotations'
-export type { AnnotationMarker, Bookmark, AnnotationState, AnnotationListener } from './state/annotations'
+export type { AnnotationMarker, AnnotationShape, Bookmark, AnnotationState, AnnotationListener } from './state/annotations'
 
 // ─── Performance utilities (Bundle 11) ───────────────────────────────────────
 export { rafThrottle, debounce } from './util/throttle'

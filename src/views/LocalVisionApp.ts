@@ -82,6 +82,10 @@ export class LocalVisionApp {
   private breadcrumbEl: HTMLElement
   private time: TimeStore
   private annotations = new AnnotationStore()
+  /** Tour playback state. */
+  private tourRunning = false
+  private tourTimer: ReturnType<typeof setTimeout> | null = null
+  private tourIndex = 0
   private timeBarEl: HTMLElement
   private timePlayBtn: HTMLButtonElement
   private timeSliderEl: HTMLInputElement
@@ -161,9 +165,10 @@ export class LocalVisionApp {
     this.drilldown = new DrilldownStore()
     this.time = new TimeStore()
 
-    // Annotation store → push markers to the active view + persist on change
+    // Annotation store → push markers + shapes to the active view + persist
     this.annotations.subscribe((state) => {
       this.outerView?.setAnnotationMarkers(state.markers)
+      this.outerView?.setAnnotationShapes(state.shapes)
       this.persistAnnotations(state)
     })
     // Hydrate persisted annotations (markers + bookmarks)
@@ -538,6 +543,8 @@ export class LocalVisionApp {
 
   destroy(): void {
     if (this.loadingTimer) clearInterval(this.loadingTimer)
+    if (this.tourTimer) clearTimeout(this.tourTimer)
+    this.tourRunning = false
     this.time.destroy()
     this.destroyActiveView()
     this.root.innerHTML = ''
@@ -1128,6 +1135,7 @@ export class LocalVisionApp {
       if (persisted) this.outerView.setStyle(persisted)
       // Replay annotation markers so they survive view switches.
       this.outerView.setAnnotationMarkers(this.annotations.getSnapshot().markers)
+      this.outerView.setAnnotationShapes(this.annotations.getSnapshot().shapes)
       this.forwardListeners(this.outerView)
     }
 
@@ -1610,16 +1618,95 @@ export class LocalVisionApp {
   }
 
   /**
+   * Start interactive freehand shape drawing. Collapses the panel so the
+   * map is visible, then waits for the user to draw. On finish, prompts
+   * for an optional label and adds the shape to the store.
+   */
+  private handleDrawShapeClick(kind: 'polygon' | 'line', btn: HTMLButtonElement): void {
+    if (!this.outerView) return
+    const original = btn.textContent
+    btn.textContent = 'Drawing…'
+    btn.disabled = true
+    this.toggleSettingsPanel() // collapse so map is visible
+    this.outerView.startShapeDrawing(kind, (points) => {
+      btn.textContent = original
+      btn.disabled = false
+      if (!points) return
+      const label = window.prompt(
+        `${kind === 'polygon' ? 'Region' : 'Line'} label (optional):`,
+        '',
+      )
+      this.annotations.addShape({
+        kind,
+        points,
+        label: label || undefined,
+      })
+    })
+  }
+
+  // ── Tour ─────────────────────────────────────────────────────────────────────
+
+  /** Start / stop the bookmark tour. */
+  private toggleTour(btn: HTMLButtonElement): void {
+    if (this.tourRunning) {
+      this.stopTour(btn)
+    } else {
+      this.startTour(btn)
+    }
+  }
+
+  private startTour(btn: HTMLButtonElement): void {
+    const bookmarks = this.annotations.getSnapshot().bookmarks
+    if (bookmarks.length < 2) return
+    this.tourRunning = true
+    this.tourIndex = 0
+    btn.textContent = '⏹ Stop tour'
+    const hint = document.getElementById('lv-tour-hint')
+    if (hint) hint.style.display = ''
+    // Collapse the panel so the user watches the map
+    if (this.settingsPanelEl.style.display !== 'none') this.toggleSettingsPanel()
+
+    const step = () => {
+      if (!this.tourRunning) return
+      const list = this.annotations.getSnapshot().bookmarks
+      if (list.length === 0) {
+        this.stopTour(btn)
+        return
+      }
+      const bm = list[this.tourIndex % list.length]
+      this.applyBookmark(bm.id)
+      this.tourIndex += 1
+      this.tourTimer = setTimeout(step, 4000)
+    }
+    step()
+  }
+
+  private stopTour(btn: HTMLButtonElement): void {
+    this.tourRunning = false
+    if (this.tourTimer) {
+      clearTimeout(this.tourTimer)
+      this.tourTimer = null
+    }
+    btn.textContent = '▶ Play tour'
+    const hint = document.getElementById('lv-tour-hint')
+    if (hint) hint.style.display = 'none'
+  }
+
+  /**
    * Render the markers + bookmarks list into the settings panel section.
    * Each entry has a label + a remove button; bookmarks also get a "go"
    * action that flies the camera there.
    */
   private renderAnnotationList(container: HTMLElement, state: AnnotationState): void {
     container.innerHTML = ''
-    if (state.markers.length === 0 && state.bookmarks.length === 0) {
+    if (
+      state.markers.length === 0 &&
+      state.shapes.length === 0 &&
+      state.bookmarks.length === 0
+    ) {
       const empty = document.createElement('div')
       empty.className = 'lv-annotation-empty'
-      empty.textContent = 'No markers or bookmarks yet.'
+      empty.textContent = 'No markers, shapes, or bookmarks yet.'
       container.appendChild(empty)
       return
     }
@@ -1639,6 +1726,27 @@ export class LocalVisionApp {
       del.title = 'Remove marker'
       del.addEventListener('click', () => this.annotations.removeMarker(m.id))
       row.appendChild(dot)
+      row.appendChild(label)
+      row.appendChild(del)
+      container.appendChild(row)
+    })
+
+    state.shapes.forEach((sh) => {
+      const row = document.createElement('div')
+      row.className = 'lv-annotation-item'
+      const icon = document.createElement('span')
+      icon.className = 'lv-annotation-bookmark-icon'
+      icon.textContent = sh.kind === 'polygon' ? '▱' : '╱'
+      icon.style.color = sh.color ?? '#fbbf24'
+      const label = document.createElement('span')
+      label.className = 'lv-annotation-item-label'
+      label.textContent = sh.label || (sh.kind === 'polygon' ? 'Region' : 'Line')
+      const del = document.createElement('button')
+      del.className = 'lv-annotation-del'
+      del.textContent = '✕'
+      del.title = 'Remove shape'
+      del.addEventListener('click', () => this.annotations.removeShape(sh.id))
+      row.appendChild(icon)
       row.appendChild(label)
       row.appendChild(del)
       container.appendChild(row)
@@ -2089,12 +2197,49 @@ export class LocalVisionApp {
     annRow.appendChild(bookmarkBtn)
     annSection.appendChild(annRow)
 
-    // List of existing markers + bookmarks (rendered reactively)
+    // Freehand shape drawing — polygon (region) + line (route)
+    const shapeRow = document.createElement('div')
+    shapeRow.className = 'lv-clip-row'
+    const drawPolyBtn = document.createElement('button')
+    drawPolyBtn.className = 'lv-clip-btn'
+    drawPolyBtn.textContent = 'Draw region'
+    drawPolyBtn.addEventListener('click', () => this.handleDrawShapeClick('polygon', drawPolyBtn))
+    const drawLineBtn = document.createElement('button')
+    drawLineBtn.className = 'lv-clip-btn'
+    drawLineBtn.textContent = 'Draw line'
+    drawLineBtn.addEventListener('click', () => this.handleDrawShapeClick('line', drawLineBtn))
+    shapeRow.appendChild(drawPolyBtn)
+    shapeRow.appendChild(drawLineBtn)
+    annSection.appendChild(shapeRow)
+
+    // Tour controls — only meaningful with 2+ bookmarks
+    const tourRow = document.createElement('div')
+    tourRow.className = 'lv-clip-row'
+    const tourBtn = document.createElement('button')
+    tourBtn.className = 'lv-clip-btn'
+    tourBtn.id = 'lv-tour-btn'
+    tourBtn.textContent = '▶ Play tour'
+    tourBtn.addEventListener('click', () => this.toggleTour(tourBtn))
+    tourRow.appendChild(tourBtn)
+    annSection.appendChild(tourRow)
+    const tourHint = document.createElement('div')
+    tourHint.className = 'lv-clip-hint'
+    tourHint.textContent = 'Tour visits each bookmark in order, pausing 4s at each.'
+    tourHint.style.display = 'none'
+    tourHint.id = 'lv-tour-hint'
+    annSection.appendChild(tourHint)
+
+    // List of existing markers + shapes + bookmarks (rendered reactively)
     const annList = document.createElement('div')
     annList.className = 'lv-annotation-list'
     annSection.appendChild(annList)
-    this.annotations.subscribe((state) => this.renderAnnotationList(annList, state))
+    this.annotations.subscribe((state) => {
+      this.renderAnnotationList(annList, state)
+      // Disable the tour button when fewer than 2 bookmarks exist
+      tourBtn.disabled = state.bookmarks.length < 2 && !this.tourRunning
+    })
     this.renderAnnotationList(annList, this.annotations.getSnapshot())
+    tourBtn.disabled = this.annotations.getSnapshot().bookmarks.length < 2
 
     panel.appendChild(annSection)
 

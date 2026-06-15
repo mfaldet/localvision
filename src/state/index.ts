@@ -17,6 +17,7 @@ export type { TimeState, TimeListener, TimeValue } from './time'
 export { AnnotationStore } from './annotations'
 export type {
   AnnotationMarker,
+  AnnotationShape,
   Bookmark,
   AnnotationState,
   AnnotationListener,
