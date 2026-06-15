@@ -134,7 +134,7 @@ const app = LocalVisionApp.fromTemplate('equity', {
 })
 ```
 
-Templates ship with: `equity`, `housing`, `economic`, `community`. See [docs/templates.md](templates.md).
+Templates ship with: `equity`, `housing`, `economic`, `community`. See [Templates](templates.md).
 
 ## Next steps
 
