@@ -364,6 +364,122 @@ export class OuterCityView {
     return this.map
   }
 
+  // ── Annotation markers ──────────────────────────────────────────────────────
+
+  /**
+   * Replace all annotation markers on the map. Renders each as a small
+   * circle + a text label above it. Idempotent — call on every store
+   * change; the source data is swapped in place.
+   */
+  setAnnotationMarkers(
+    markers: { id: string; lngLat: [number, number]; label: string; color?: string }[],
+  ): void {
+    const apply = () => {
+      const SOURCE = 'lv-annotations'
+      const DOT = 'lv-annotation-dot'
+      const LABEL = 'lv-annotation-label'
+
+      const fc = {
+        type: 'FeatureCollection',
+        features: markers.map((m) => ({
+          type: 'Feature',
+          properties: { id: m.id, label: m.label, color: m.color ?? '#fbbf24' },
+          geometry: { type: 'Point', coordinates: m.lngLat },
+        })),
+      } as unknown as GeoJSON.FeatureCollection
+
+      const existing = this.map.getSource(SOURCE) as maplibregl.GeoJSONSource | undefined
+      if (existing) {
+        existing.setData(fc)
+        return
+      }
+      this.map.addSource(SOURCE, { type: 'geojson', data: fc })
+      this.map.addLayer({
+        id: DOT,
+        type: 'circle',
+        source: SOURCE,
+        paint: {
+          'circle-radius': 6,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      })
+      this.map.addLayer({
+        id: LABEL,
+        type: 'symbol',
+        source: SOURCE,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 12,
+          'text-offset': [0, -1.4],
+          'text-anchor': 'bottom',
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#000000',
+          'text-halo-width': 1.5,
+        },
+      })
+    }
+    if (this.map.isStyleLoaded()) apply()
+    else this.map.once('load', apply)
+  }
+
+  /**
+   * Begin interactive marker placement. The next map click resolves the
+   * callback with the clicked [lng, lat]; Esc cancels (resolves null).
+   * The cursor switches to crosshair during placement.
+   */
+  startMarkerPlacement(onPlace: (lngLat: [number, number] | null) => void): void {
+    this.mapEl.style.cursor = 'crosshair'
+    const cleanup = () => {
+      this.mapEl.style.cursor = ''
+      this.map.off('click', onClick)
+      window.removeEventListener('keydown', onKey)
+    }
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      cleanup()
+      onPlace([e.lngLat.lng, e.lngLat.lat])
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        cleanup()
+        onPlace(null)
+      }
+    }
+    this.map.on('click', onClick)
+    window.addEventListener('keydown', onKey)
+  }
+
+  // ── Camera snapshot / restore (for bookmarks) ───────────────────────────────
+
+  /** Capture the current camera as a plain object (for bookmarks). */
+  getCamera(): { center: [number, number]; zoom: number; bearing: number; pitch: number } {
+    const c = this.map.getCenter()
+    return {
+      center: [c.lng, c.lat],
+      zoom: this.map.getZoom(),
+      bearing: this.map.getBearing(),
+      pitch: this.map.getPitch(),
+    }
+  }
+
+  /** Fly the camera to a saved snapshot. */
+  flyToCamera(
+    cam: { center: [number, number]; zoom: number; bearing: number; pitch: number },
+    durationMs = 900,
+  ): void {
+    this.map.flyTo({
+      center: cam.center,
+      zoom: cam.zoom,
+      bearing: cam.bearing,
+      pitch: cam.pitch,
+      duration: durationMs,
+    })
+  }
+
   /**
    * Add or replace a "city focus" overlay — the chosen city's polygon drawn
    * as a bold red outline on top of everything. Always visible regardless
