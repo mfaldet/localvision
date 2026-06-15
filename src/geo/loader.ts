@@ -36,7 +36,8 @@ const ACS_LAYER: Record<string, number> = {
   scsd:   12,
   elsd:   14,
   cousub: 18,
-  place:  24,  // Incorporated Places. CDPs are layer 26.
+  place:  24,  // Incorporated Places
+  cdp:    26,  // Census Designated Places (merged into `place` results)
   cd:     50,  // 118th Congressional Districts
   sldu:   52,  // 2022 State Legislative Districts — Upper
   sldl:   54,  // 2022 State Legislative Districts — Lower
@@ -315,10 +316,33 @@ export class BoundaryLoader {
   }
 
   /**
-   * Incorporated places and Census Designated Places (CDPs) for a state.
+   * Incorporated places AND Census Designated Places (CDPs) for a state,
+   * merged into a single FeatureCollection.
+   *
+   * Why both: TIGERweb splits these across two layers (24 = Incorporated
+   * Places, 26 = CDPs), but the ACS `for=place:*` query returns rows for
+   * BOTH. If we only fetched layer 24, every CDP row in an ACS table would
+   * have no matching boundary and get silently dropped during the bind.
+   * Fetching both keeps boundary coverage aligned with the data.
+   *
+   * Pass `{ incorporatedOnly: true }` to restrict to incorporated places
+   * (layer 24) when you specifically don't want CDPs.
    */
-  places(stateFips: string): Promise<GeoJsonFeatureCollection> {
-    return this.tigerwebQuery('place', stateFips)
+  async places(
+    stateFips: string,
+    opts: { incorporatedOnly?: boolean } = {},
+  ): Promise<GeoJsonFeatureCollection> {
+    if (opts.incorporatedOnly) {
+      return this.tigerwebQuery('place', stateFips)
+    }
+    const [inc, cdp] = await Promise.all([
+      this.tigerwebQuery('place', stateFips),
+      this.tigerwebQuery('cdp', stateFips),
+    ])
+    return {
+      type: 'FeatureCollection',
+      features: [...inc.features, ...cdp.features],
+    }
   }
 
   /**
