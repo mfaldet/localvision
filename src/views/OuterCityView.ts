@@ -10,6 +10,7 @@ import type {
 import type { DataBinding } from '../data/types'
 import { SelectionStore } from '../state/selection'
 import { resolveTheme, applyThemeToDom, type ResolvedTheme } from '../theme/tokens'
+import { rafThrottle, debounce } from '../util/throttle'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '../theme/styles.css'
@@ -111,6 +112,10 @@ export class OuterCityView {
   private drillButtonLabel?: string
   private listeners: Partial<{ [K in keyof LocalVisionEventMap]: ((e: LocalVisionEventMap[K]) => void)[] }> = {}
   private resizeObserver: ResizeObserver
+  /** rAF-batched map repaint for time scrubbing. Created in constructor. */
+  private scrubMapUpdate!: ((time: string | number) => void) & { cancel: () => void }
+  /** Debounced panel re-render for time scrubbing. Created in constructor. */
+  private scrubPanelUpdate!: (() => void) & { cancel: () => void; flush: () => void }
 
   constructor(options: OuterCityOptions) {
     this.theme = resolveTheme(options.theme)
@@ -212,8 +217,29 @@ export class OuterCityView {
     this.renderKpiSelector()
     this.renderPanel()
 
-    this.resizeObserver = new ResizeObserver(() => this.renderPanel())
+    // Debounce panel re-render on resize — ResizeObserver fires many times
+    // during a drag-resize of the map/panel split; only re-layout charts
+    // once the drag settles.
+    const debouncedResize = debounce(() => this.renderPanel(), 80)
+    this.resizeObserver = new ResizeObserver(() => debouncedResize())
     this.resizeObserver.observe(this.panelEl)
+
+    // Time-scrub performance: coalesce rapid slider updates. The map
+    // repaint runs at most once per animation frame (visual smoothness),
+    // while the heavier chart-panel re-render waits 120ms after the user
+    // stops scrubbing (avoids re-laying-out N Plot charts on every tick).
+    this.scrubMapUpdate = rafThrottle((time: string | number) => {
+      this.currentTime = time
+      this.communities = bindingToCommunities(this.activeBinding!, this.currentTime)
+      if (this.map.isStyleLoaded()) {
+        const source = this.map.getSource(COMMUNITIES_SOURCE) as
+          | maplibregl.GeoJSONSource
+          | undefined
+        if (source) source.setData(this.buildMergedGeoJson() as GeoJSON.FeatureCollection)
+        this.updateChoropleth()
+      }
+    })
+    this.scrubPanelUpdate = debounce(() => this.renderPanel(), 120)
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -319,20 +345,12 @@ export class OuterCityView {
     if (!this.activeBinding?.table.timeAxis) return
     if (time === this.currentTime) return
 
-    this.currentTime = time
-    this.communities = bindingToCommunities(this.activeBinding, this.currentTime)
-
-    if (this.map.isStyleLoaded()) {
-      const source = this.map.getSource(COMMUNITIES_SOURCE) as
-        | maplibregl.GeoJSONSource
-        | undefined
-      if (source) {
-        source.setData(this.buildMergedGeoJson() as GeoJSON.FeatureCollection)
-      }
-      this.updateChoropleth()
-    }
-    // No fitToAllCommunities — boundaries haven't changed, only values
-    this.renderPanel()
+    // Map repaint: rAF-batched so rapid scrubbing renders at most once per
+    // frame with the latest value. Panel re-render: debounced so the
+    // (heavier) Plot chart layout only happens once the user pauses.
+    // No fitToAllCommunities — boundaries haven't changed, only values.
+    this.scrubMapUpdate(time)
+    this.scrubPanelUpdate()
   }
 
   /**
@@ -759,6 +777,8 @@ export class OuterCityView {
   }
 
   destroy(): void {
+    this.scrubMapUpdate?.cancel()
+    this.scrubPanelUpdate?.cancel()
     this.unsubscribeSelection()
     this.resizeObserver.disconnect()
     this.map.remove()
