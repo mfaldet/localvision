@@ -25,6 +25,7 @@ import {
   type DrillTarget,
 } from '../state/drilldown'
 import { TimeStore, type TimeState } from '../state/time'
+import { AnnotationStore, type AnnotationState } from '../state/annotations'
 import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
@@ -80,6 +81,7 @@ export class LocalVisionApp {
   private drilldown: DrilldownStore
   private breadcrumbEl: HTMLElement
   private time: TimeStore
+  private annotations = new AnnotationStore()
   private timeBarEl: HTMLElement
   private timePlayBtn: HTMLButtonElement
   private timeSliderEl: HTMLInputElement
@@ -158,6 +160,15 @@ export class LocalVisionApp {
     this.selection = new SelectionStore()
     this.drilldown = new DrilldownStore()
     this.time = new TimeStore()
+
+    // Annotation store → push markers to the active view + persist on change
+    this.annotations.subscribe((state) => {
+      this.outerView?.setAnnotationMarkers(state.markers)
+      this.persistAnnotations(state)
+    })
+    // Hydrate persisted annotations (markers + bookmarks)
+    const savedAnnotations = this.loadPersistedAnnotations()
+    if (savedAnnotations) this.annotations.hydrate(savedAnnotations)
 
     const theme = resolveTheme(options.theme)
 
@@ -1115,6 +1126,8 @@ export class LocalVisionApp {
       // so the user's choices survive view switches AND page reloads.
       const persisted = this.loadPersistedStyle()
       if (persisted) this.outerView.setStyle(persisted)
+      // Replay annotation markers so they survive view switches.
+      this.outerView.setAnnotationMarkers(this.annotations.getSnapshot().markers)
       this.forwardListeners(this.outerView)
     }
 
@@ -1393,6 +1406,34 @@ export class LocalVisionApp {
     this.persistStyle(partial)
   }
 
+  // ── Annotation persistence ──────────────────────────────────────────────────
+
+  private static ANNOTATIONS_STORAGE_KEY = 'lv_annotations_v1'
+
+  private loadPersistedAnnotations(): AnnotationState | null {
+    if (typeof localStorage === 'undefined') return null
+    try {
+      const raw = localStorage.getItem(LocalVisionApp.ANNOTATIONS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as AnnotationState) : null
+    } catch {
+      return null
+    }
+  }
+
+  private persistAnnotations(state: AnnotationState): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.setItem(LocalVisionApp.ANNOTATIONS_STORAGE_KEY, JSON.stringify(state))
+    } catch {
+      /* quota or disabled — skip */
+    }
+  }
+
+  /** Public accessor for the annotation store (subscribe / mutate externally). */
+  get annotationStore(): AnnotationStore {
+    return this.annotations
+  }
+
   // ── Custom map layer presets ────────────────────────────────────────────────
 
   private static LAYERS_STORAGE_KEY = 'lv_custom_layers_v1'
@@ -1517,6 +1558,115 @@ export class LocalVisionApp {
    *      On cancel (Esc / too few points): just reset the button.
    *   2. Drawing — clicking aborts the in-flight drawing.
    */
+  // ── Annotation handlers ─────────────────────────────────────────────────────
+
+  /**
+   * Start interactive marker placement. Collapses the settings panel so
+   * the user can see the map, then waits for a map click. After the click,
+   * prompts for a label and adds the marker to the store.
+   */
+  private handleAddMarkerClick(btn: HTMLButtonElement): void {
+    if (!this.outerView) return
+    btn.textContent = 'Click map…'
+    btn.disabled = true
+    this.toggleSettingsPanel() // collapse so map is visible
+    this.outerView.startMarkerPlacement((lngLat) => {
+      btn.textContent = 'Add marker'
+      btn.disabled = false
+      if (!lngLat) return
+      const label = window.prompt('Marker label:', 'Note')
+      if (label == null) return // cancelled
+      this.annotations.addMarker({ lngLat, label: label || 'Note' })
+    })
+  }
+
+  /**
+   * Capture the current camera + navigation state as a bookmark. Prompts
+   * for a name; defaults to the active KPI + level.
+   */
+  private handleAddBookmarkClick(): void {
+    if (!this.outerView) return
+    const camera = this.outerView.getCamera()
+    const activePill = this.kpiSlotEl.querySelector('.lv-kpi-pill.lv-active') as HTMLElement | null
+    const kpi = activePill?.dataset?.['kpi']
+    const level = this.activeView === 'outer' ? this.outerBoundary : this.innerBoundary
+    const suggested = `${this.activeView} · ${level}`
+    const label = window.prompt('Bookmark name:', suggested)
+    if (label == null) return
+    this.annotations.addBookmark({
+      label: label || suggested,
+      camera,
+      nav: { view: this.activeView, level, kpi },
+    })
+  }
+
+  /** Jump to a saved bookmark — restore camera + (best-effort) nav state. */
+  private applyBookmark(bookmarkId: string): void {
+    const bm = this.annotations.getSnapshot().bookmarks.find((b) => b.id === bookmarkId)
+    if (!bm || !this.outerView) return
+    // Restore the active KPI if it differs (camera fly happens regardless)
+    if (bm.nav.kpi) this.outerView.setActiveKpi?.(bm.nav.kpi)
+    this.outerView.flyToCamera(bm.camera)
+  }
+
+  /**
+   * Render the markers + bookmarks list into the settings panel section.
+   * Each entry has a label + a remove button; bookmarks also get a "go"
+   * action that flies the camera there.
+   */
+  private renderAnnotationList(container: HTMLElement, state: AnnotationState): void {
+    container.innerHTML = ''
+    if (state.markers.length === 0 && state.bookmarks.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'lv-annotation-empty'
+      empty.textContent = 'No markers or bookmarks yet.'
+      container.appendChild(empty)
+      return
+    }
+
+    state.markers.forEach((m) => {
+      const row = document.createElement('div')
+      row.className = 'lv-annotation-item'
+      const dot = document.createElement('span')
+      dot.className = 'lv-annotation-swatch'
+      dot.style.background = m.color ?? '#fbbf24'
+      const label = document.createElement('span')
+      label.className = 'lv-annotation-item-label'
+      label.textContent = m.label
+      const del = document.createElement('button')
+      del.className = 'lv-annotation-del'
+      del.textContent = '✕'
+      del.title = 'Remove marker'
+      del.addEventListener('click', () => this.annotations.removeMarker(m.id))
+      row.appendChild(dot)
+      row.appendChild(label)
+      row.appendChild(del)
+      container.appendChild(row)
+    })
+
+    state.bookmarks.forEach((b) => {
+      const row = document.createElement('div')
+      row.className = 'lv-annotation-item lv-annotation-bookmark'
+      const icon = document.createElement('span')
+      icon.className = 'lv-annotation-bookmark-icon'
+      icon.textContent = '⚑'
+      const label = document.createElement('button')
+      label.className = 'lv-annotation-item-label lv-annotation-goto'
+      label.textContent = b.label
+      label.title = 'Go to this bookmark'
+      label.addEventListener('click', () => this.applyBookmark(b.id))
+      const del = document.createElement('button')
+      del.className = 'lv-annotation-del'
+      del.textContent = '✕'
+      del.title = 'Remove bookmark'
+      del.addEventListener('click', () => this.annotations.removeBookmark(b.id))
+      row.appendChild(icon)
+      row.appendChild(label)
+      row.appendChild(del)
+      container.appendChild(row)
+    })
+  }
+
   private handleClipDrawClick(
     drawBtn: HTMLButtonElement,
     clearBtn: HTMLButtonElement,
@@ -1919,6 +2069,34 @@ export class LocalVisionApp {
     clipSection.appendChild(clipRow)
     clipSection.appendChild(hintEl)
     panel.appendChild(clipSection)
+
+    // 8. Annotations — labeled markers + view bookmarks (storytelling)
+    const annSection = section('Annotations')
+    const annRow = document.createElement('div')
+    annRow.className = 'lv-clip-row'
+
+    const addMarkerBtn = document.createElement('button')
+    addMarkerBtn.className = 'lv-clip-btn'
+    addMarkerBtn.textContent = 'Add marker'
+    addMarkerBtn.addEventListener('click', () => this.handleAddMarkerClick(addMarkerBtn))
+
+    const bookmarkBtn = document.createElement('button')
+    bookmarkBtn.className = 'lv-clip-btn'
+    bookmarkBtn.textContent = 'Bookmark view'
+    bookmarkBtn.addEventListener('click', () => this.handleAddBookmarkClick())
+
+    annRow.appendChild(addMarkerBtn)
+    annRow.appendChild(bookmarkBtn)
+    annSection.appendChild(annRow)
+
+    // List of existing markers + bookmarks (rendered reactively)
+    const annList = document.createElement('div')
+    annList.className = 'lv-annotation-list'
+    annSection.appendChild(annList)
+    this.annotations.subscribe((state) => this.renderAnnotationList(annList, state))
+    this.renderAnnotationList(annList, this.annotations.getSnapshot())
+
+    panel.appendChild(annSection)
 
     return panel
 

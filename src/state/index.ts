@@ -13,3 +13,11 @@ export type {
 
 export { TimeStore } from './time'
 export type { TimeState, TimeListener, TimeValue } from './time'
+
+export { AnnotationStore } from './annotations'
+export type {
+  AnnotationMarker,
+  Bookmark,
+  AnnotationState,
+  AnnotationListener,
+} from './annotations'

@@ -88,6 +88,10 @@ export type {
 export { TimeStore } from './state/time'
 export type { TimeState, TimeListener, TimeValue } from './state/time'
 
+// ─── Annotations (Bundle 9) ──────────────────────────────────────────────────
+export { AnnotationStore } from './state/annotations'
+export type { AnnotationMarker, Bookmark, AnnotationState, AnnotationListener } from './state/annotations'
+
 // ─── Data Foundation (Bundle 1) ──────────────────────────────────────────────
 export {
   CensusACS,
