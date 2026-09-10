@@ -71,7 +71,7 @@ export class InnerCityView {
       zoom: mapOpts.zoom ?? 10,
       bearing: mapOpts.bearing ?? 0,
       pitch: mapOpts.pitch ?? 0,
-      attributionControl: true,
+      attributionControl: {},
     })
 
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')

@@ -1619,7 +1619,7 @@ export class OuterCityView {
       const marks: Plot.Markish[] = [
         Plot.rectY(
           values,
-          Plot.binX(
+          Plot.binX<Plot.RectYOptions>(
             { y: 'count' },
             { x: (v: number) => v, fill: this.theme.colorPrimary, fillOpacity: 0.55 },
           ),
