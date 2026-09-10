@@ -29,7 +29,7 @@ import { AnnotationStore, type AnnotationState } from '../state/annotations'
 import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
-import { OuterCityView } from './OuterCityView'
+import { OuterCityView, type ChoroplethStyleConfig } from './OuterCityView'
 
 import '../theme/styles.css'
 
@@ -1430,6 +1430,8 @@ export class LocalVisionApp {
       this.breadcrumbEl.appendChild(loading)
     }
   }
+
+  private static STYLE_STORAGE_KEY = 'lv_style_v1'
 
   /** Read persisted style settings from localStorage. */
   private loadPersistedStyle(): Partial<ChoroplethStyleConfig> | null {

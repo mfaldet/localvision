@@ -4,7 +4,7 @@ export type { ChoroplethStyleConfig, ColorSchemeName, LinePatternName } from './
 
 // ─── Custom map layers (Bundle 5) ────────────────────────────────────────────
 export { LAYER_PRESETS, PRESET_IDS, fetchOverpassGeoJson, osmJsonToGeoJson } from './layers/index'
-export type { LayerPreset, LayerType, OverpassFetchOptions } from './layers/index'
+export type { LayerPreset, OverpassFetchOptions } from './layers/index'
 
 // ─── Export & sharing (Bundle 8) ─────────────────────────────────────────────
 export { exportMapPng, exportAppPng, readUrlState, writeUrlState, encodeUrlState } from './export/index'

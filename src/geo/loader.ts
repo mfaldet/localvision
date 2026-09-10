@@ -283,7 +283,10 @@ export class BoundaryLoader {
   constructor(options: BoundaryLoaderOptions = {}) {
     this.useSessionCache = options.sessionCache ?? false
     this.idb = options.persistentCache ? new IDBCache() : null
-    this.layers = { ...ACS_LAYER, ...options.layerOverrides }
+    this.layers = { ...ACS_LAYER }
+    for (const [key, value] of Object.entries(options.layerOverrides ?? {})) {
+      if (value !== undefined) this.layers[key] = value
+    }
   }
 
   // ── Outer levels ─────────────────────────────────────────────────────────────
