@@ -2,7 +2,7 @@
 
 Interactive community-data dashboards from pandas, rendered as Jupyter widgets via [anywidget](https://anywidget.dev/).
 
-This is the Python wrapper around the [LocalVision JS library](../). It bundles the JS into a single widget file so you can `pip install localvision` and get an offline-capable widget.
+This is the Python wrapper around the [LocalVision JS library](../). It bundles the JS into a single widget file, so once installed from this repo (below) the widget needs no separate JavaScript setup. It is not published to PyPI.
 
 ## Install (from source, editable)
 

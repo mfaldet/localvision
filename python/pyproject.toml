@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "Mac Faldet", email = "MacFaldet@focaldataworks.com" },
+    { name = "Mac Faldet", email = "mac@faldetadvisory.com" },
 ]
 keywords = ["geo", "choropleth", "census", "acs", "jupyter", "widget", "dataviz"]
 classifiers = [
