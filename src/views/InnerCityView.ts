@@ -3,7 +3,6 @@ import type {
   InnerCityOptions,
   KpiSeries,
   ChartConfig,
-  FeatureSelectEvent,
   LocalVisionEventMap,
 } from '../types'
 import { resolveTheme, applyThemeToDom, type ResolvedTheme } from '../theme/tokens'

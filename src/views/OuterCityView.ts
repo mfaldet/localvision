@@ -4,7 +4,6 @@ import type {
   OuterCityOptions,
   CommunityRecord,
   KpiDefinition,
-  ChartConfig,
   LocalVisionEventMap,
 } from '../types'
 import type { DataBinding } from '../data/types'
@@ -89,7 +88,6 @@ export class OuterCityView {
   private communities: CommunityRecord[]
   private kpiDefs: Map<string, KpiDefinition>
   private activeKpi: string
-  private charts: ChartConfig[]
   private splitRatio: number
   private selection: SelectionStore
   private unsubscribeSelection: () => void = () => {}
@@ -144,7 +142,6 @@ export class OuterCityView {
     }
 
     this.activeKpi = options.activeKpi
-    this.charts = options.charts ?? []
 
     // Resolve container
     this.root = typeof options.container === 'string'
@@ -1373,7 +1370,7 @@ export class OuterCityView {
     }
   }
 
-  private renderCommunityDetail(community: CommunityRecord, width: number): void {
+  private renderCommunityDetail(community: CommunityRecord, _width: number): void {
     const header = document.createElement('div')
     header.className = 'lv-chart-card'
     header.style.borderBottom = `1px solid ${this.theme.colorBorder}`
@@ -1461,94 +1458,6 @@ export class OuterCityView {
     compatible.forEach((def) => {
       if (def.id !== this.activeKpi) this.renderDistributionCard(def, width, false)
     })
-  }
-
-  /** Big ranked-bar card. Bidirectional cross-filter: clicking a bar selects. */
-  private renderRankedBarCard(kpiDef: KpiDefinition, width: number): void {
-    const card = document.createElement('div')
-    card.className = 'lv-chart-card'
-
-    const title = document.createElement('p')
-    title.className = 'lv-chart-title'
-    title.textContent = `${kpiDef.label} — all communities`
-    card.appendChild(title)
-
-    const chartEl = document.createElement('div')
-    chartEl.className = 'lv-chart-container'
-    card.appendChild(chartEl)
-    this.panelEl.appendChild(card)
-
-    const selectedIds = this.selection.getSnapshot().selected
-    const data = [...this.communities]
-      .sort((a, b) => (b.kpis[kpiDef.id] ?? 0) - (a.kpis[kpiDef.id] ?? 0))
-      .map((c) => ({
-        id: c.id,
-        label: c.label,
-        value: c.kpis[kpiDef.id] ?? 0,
-        selected: selectedIds.has(c.id),
-      }))
-
-    const height = Math.max(200, data.length * 32 + 48)
-    const hasSelection = selectedIds.size > 0
-
-    const plot = Plot.plot({
-      width: width - 48,
-      height,
-      marginLeft: 140, // wide enough for "Dakota County", "Saint Louis County", etc.
-      marginRight: 16,
-      marginTop: 8,
-      marginBottom: 36,
-      style: {
-        background: 'transparent',
-        color: this.theme.colorTextMuted,
-        fontFamily: this.theme.fontFamily,
-        fontSize: '11px',
-        overflow: 'visible',
-      },
-      x: {
-        tickSize: 0,
-        tickPadding: 8,
-        line: false,
-        tickFormat: (d: number) => formatKpiValue(d, kpiDef),
-      },
-      y: { tickSize: 0 },
-      marks: [
-        Plot.gridX({ stroke: this.theme.colorBorder, strokeOpacity: 0.5 }),
-        Plot.barX(data, {
-          y: 'label',
-          x: 'value',
-          fill: (d: { selected: boolean }) =>
-            d.selected ? this.theme.colorAccent : this.theme.colorPrimary,
-          fillOpacity: (d: { selected: boolean }) =>
-            hasSelection ? (d.selected ? 1 : 0.25) : 0.85,
-          rx: 3,
-          sort: { y: '-x' },
-          tip: true,
-        }),
-        Plot.ruleX([0], { stroke: this.theme.colorBorder }),
-      ],
-    })
-
-    chartEl.appendChild(plot)
-
-    // Bidirectional click → selection. Plot renders one <rect> per row in
-    // sorted order, so the index matches data[i].
-    const rects = plot.querySelectorAll('rect[fill]')
-    const dataRects = Array.from(rects).filter((r) => {
-      const x = parseFloat(r.getAttribute('x') ?? '0')
-      return x > 0 || r.getAttribute('width') !== '0'
-    })
-    if (dataRects.length === data.length) {
-      dataRects.forEach((rect, i) => {
-        const datum = data[i]
-        ;(rect as SVGElement).style.cursor = 'pointer'
-        rect.addEventListener('click', (e) => {
-          e.stopPropagation()
-          if (datum.selected) this.selection.clear()
-          else this.selection.selectFeatures([datum.id], 'replace')
-        })
-      })
-    }
   }
 
   /**

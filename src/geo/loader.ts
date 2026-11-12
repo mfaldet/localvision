@@ -63,10 +63,10 @@ const LAYERS_WITH_COUNTY = new Set<string>(['county', 'cousub', 'tract', 'bg'])
  *
  * Workaround: probe OBJECTIDs first (no geometry, allowed), then fetch
  * geometry via `OBJECTID IN (...)` which the WAF allows because it's
- * a specific-value match. This set lists the layers that need this
- * treatment when fetched in their entirety.
+ * a specific-value match. The layers that need this treatment when fetched
+ * in their entirety are state, county-all and zcta; see the OBJECTID
+ * enumeration method further down.
  */
-const LAYERS_NEED_ID_ENUMERATION = new Set<string>(['state', 'county-all', 'zcta'])
 
 /**
  * Wraps fetch() with always-useful error messages. Three layers of detection:
