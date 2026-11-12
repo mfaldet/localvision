@@ -10,3 +10,7 @@ dist/
 # VitePress build output + cache
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Demo data build cache (downloaded Census files)
+.cache/
+demo/dist/

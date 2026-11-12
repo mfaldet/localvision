@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>LocalVision — explore public community data on a map</title>
+  <meta name="description" content="Explore population, households, income and rent for any US city on a map. Free, built on public U.S. Census Bureau data. Nothing to install." />
+  <meta name="color-scheme" content="light dark" />
+  <script>
+    // Set the theme before first paint so the page does not flash.
+    (function () {
+      var t = null
+      try { t = localStorage.getItem('lv-demo-theme') } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+      document.documentElement.dataset.theme = t
+    })()
+  </script>
+  <link rel="stylesheet" href="./src/demo.css" />
+</head>
+<body>
+  <header class="demo-bar">
+    <a class="demo-name" href="./">LocalVision</a>
+    <span class="demo-tag">Public community data on a map</span>
+    <nav class="demo-nav" aria-label="Site">
+      <a href="./docs/">Docs</a>
+      <a href="https://github.com/mfaldet/localvision">GitHub</a>
+      <button type="button" id="theme-toggle" aria-label="Switch between light and dark"></button>
+    </nav>
+  </header>
+
+  <main id="app" aria-label="Map and figures"></main>
+
+  <footer class="demo-credits">
+    <span>Data: U.S. Census Bureau<span class="wide-only">, American Community Survey</span></span>
+    <span class="wide-only">Boundaries: U.S. Census Bureau, TIGER/Line®</span>
+    <span>Map: <span class="wide-only"><a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>, data from </span><span class="narrow-only">© </span><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
+    <button type="button" id="sources-open">Sources and limits</button>
+  </footer>
+
+  <dialog id="sources" aria-labelledby="sources-title">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <h2 id="sources-title">Sources and limits</h2>
+
+    <h3>Where the figures come from</h3>
+    <p>Source: U.S. Census Bureau, American Community Survey 5-year estimates, 2015–2019 and 2020–2024, tables B01003 (population), B11001 (households), B19013 (median household income) and B25064 (median gross rent).</p>
+    <p>This site is not endorsed or certified by the Census Bureau. Anything you conclude from these figures is your own conclusion, not the Bureau's.</p>
+
+    <h3>Where the map comes from</h3>
+    <p>Boundaries: U.S. Census Bureau, TIGER/Line®.</p>
+    <p>Background map: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>. Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, © OpenStreetMap contributors, available under the Open Database License.</p>
+
+    <h3>What to keep in mind</h3>
+    <ul>
+      <li>These are survey estimates, not counts. Each one has a margin of error that this page does not show. For small places and for census tracts the margin can be large, so treat small differences as no difference.</li>
+      <li>Each period covers five years of surveys. The two periods do not overlap, which is why they can be compared.</li>
+      <li>Income and rent for 2015–2019 are shown in 2024 dollars. They were multiplied by 1.2307, the factor the Census Bureau gives for this pair of periods.</li>
+      <li>Census tracts were redrawn in 2020, so tracts show 2020–2024 only.</li>
+      <li>Where the Bureau published no estimate, or only "$250,000 or more" or "$3,500 or more", the area is left blank.</li>
+      <li>The figures are saved with this page and refreshed once a year. Only the four measures above are available here.</li>
+      <li>The Census Bureau advises caution when comparing any period that includes 2020 with other periods.</li>
+    </ul>
+
+    <h3>About</h3>
+    <p>LocalVision is free, open-source software under the MIT licence. This page sets no cookies and uses no trackers. <a href="https://github.com/mfaldet/localvision">Source code on GitHub</a>.</p>
+  </dialog>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
