@@ -6,9 +6,11 @@ A prioritized plan for getting LocalVision from "promising skeleton" to "full-si
 
 **Partly built.** An earlier version of this file said all 15 bundles had shipped. That was not accurate. In November 2026 each feature was run in a browser, and the lists below are the result. The README carries the same lists in more detail.
 
-**Works:** Census boundaries, city search, map-to-panel linking, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
+**Live demo:** https://mfaldet.github.io/localvision/ — opens on the Twin Cities metro, with figures saved in the page so it needs no API key.
 
-**Works, with known faults:** ACS data binding (needs your own Census API key), city search (can fail on first load; matches not ranked by size), PNG export (fails in Chrome), comparison mode (side by side only), shareable links (do not follow view switches), OpenStreetMap layers (not confirmed), Python wrapper (not on PyPI, not checked in a notebook), phone layout (does not fit), accessibility (charts lack screen-reader labels).
+**Works:** Census boundaries, city search, shareable links, a phone layout, map-to-panel linking, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
+
+**Works, with known faults:** ACS data binding (needs your own Census API key), city search without a saved list (slow first load; matches not ranked by size), live boundaries (slow for large counties), PNG export (fails in Chrome), comparison mode (side by side only), OpenStreetMap layers (not confirmed), Python wrapper (not on PyPI, not checked in a notebook), accessibility (charts lack screen-reader labels).
 
 **Planned, not built:** chart-to-map filtering and brushing, SVG and PDF export, swipe and difference comparison, grid-of-years view and year-over-year change, a public layer call and layer reordering, brand themes, a Public Health template, a generated API reference and gallery, browser end-to-end tests, release automation, publishing to npm and PyPI.
 
