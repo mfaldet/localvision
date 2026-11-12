@@ -1,0 +1,21 @@
+{
+ "periods": [
+  "2015\u20132019",
+  "2020\u20132024"
+ ],
+ "measures": [
+  "population",
+  "households",
+  "median_household_income",
+  "median_gross_rent"
+ ],
+ "dollar_year": 2024,
+ "inflation_factor_2019_to_2024": 1.23070782,
+ "tables": {
+  "population": "B01003",
+  "households": "B11001",
+  "median_household_income": "B19013",
+  "median_gross_rent": "B25064"
+ },
+ "built": "2026-11-12"
+}

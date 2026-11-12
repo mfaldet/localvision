@@ -240,6 +240,12 @@ export interface BoundaryLoaderOptions {
    * their service structure. Keys match ACS_LAYER above.
    */
   layerOverrides?: Partial<Record<string, number>>
+  /**
+   * Ask TIGERweb to simplify boundary shapes, in degrees (0.0002 is about
+   * 20 metres). Responses become several times smaller and faster, at no
+   * visible cost on a choropleth. Leave unset for full-detail shapes.
+   */
+  simplifyTolerance?: number
 }
 
 /**
@@ -253,6 +259,13 @@ export interface PlaceIndexEntry {
   stateAbbr: string
   /** "Name, ST" — convenient for display in dropdowns */
   displayName: string
+  /** Resident population, when known. Search results put larger places first. */
+  population?: number
+  /**
+   * True for an entry that is a region rather than a single Census place
+   * (for example a metro area). The app then skips the place-outline lookup.
+   */
+  region?: boolean
 }
 
 export interface CacheStats {
@@ -280,9 +293,12 @@ export class BoundaryLoader {
   private layers: Record<string, number>
   private stats = { hits: 0, misses: 0, coalesced: 0 }
 
+  private simplifyTolerance: number | undefined
+
   constructor(options: BoundaryLoaderOptions = {}) {
     this.useSessionCache = options.sessionCache ?? false
     this.idb = options.persistentCache ? new IDBCache() : null
+    this.simplifyTolerance = options.simplifyTolerance
     this.layers = { ...ACS_LAYER }
     for (const [key, value] of Object.entries(options.layerOverrides ?? {})) {
       if (value !== undefined) this.layers[key] = value
@@ -364,8 +380,18 @@ export class BoundaryLoader {
     }
     // Nation-wide: 50 states + DC (skip territories; ACS coverage is partial there)
     const nationStates = STATES.filter((s) => parseInt(s.fips, 10) <= 56)
-    const all = await Promise.all(nationStates.map((s) => this.placesIndexForState(s.fips)))
-    return all.flat()
+    // One state failing must not take the whole search box down: keep the
+    // states that answered and retry the rest once.
+    const load = (fips: string[]) => Promise.allSettled(fips.map((f) => this.placesIndexForState(f)))
+    const fipsList = nationStates.map((s) => s.fips)
+    const first = await load(fipsList)
+    const failed = fipsList.filter((_, i) => first[i].status === 'rejected')
+    const second = failed.length ? await load(failed) : []
+    const ok = [...first, ...second].flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    if (ok.length === 0) throw new Error('[LocalVision] Places index — no state could be loaded')
+    const stillFailed = second.filter((r) => r.status === 'rejected').length
+    if (stillFailed) console.warn(`[LocalVision] Places index is missing ${stillFailed} state(s) that could not be loaded`)
+    return ok
   }
 
   private async placesIndexForState(stateFips: string): Promise<PlaceIndexEntry[]> {
@@ -627,7 +653,9 @@ export class BoundaryLoader {
     outFields: string[],
     cacheKey?: string,
   ): Promise<GeoJsonFeatureCollection> {
-    const key = cacheKey ?? `tw:${serviceBase}:${layerId}:${where}`
+    const tol = this.simplifyTolerance
+    // Simplified and full-detail shapes must not share a cache entry.
+    const key = (cacheKey ?? `tw:${serviceBase}:${layerId}:${where}`) + (tol ? `:s${tol}` : '')
 
     return this.cached(key, async () => {
       const features: GeoJsonFeature[] = []
@@ -644,6 +672,10 @@ export class BoundaryLoader {
           resultOffset: String(offset),
           resultRecordCount: String(PAGE_SIZE),
         })
+        if (tol) {
+          params.set('maxAllowableOffset', String(tol))
+          params.set('geometryPrecision', '5')
+        }
 
         const url = `${serviceBase}/${layerId}/query?${params.toString()}`
         const res = await safeFetch(url, `TIGERweb layer ${layerId} where=${where}`)

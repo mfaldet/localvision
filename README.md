@@ -2,7 +2,7 @@
 
 Interactive community-data dashboards on US Census boundaries: a choropleth map linked to KPI charts, from county down to block group.
 
-**Docs:** https://mfaldet.github.io/localvision/ · **Python/Jupyter wrapper:** [`python/`](python/)
+**Docs:** https://mfaldet.github.io/localvision/docs/ · **Python/Jupyter wrapper:** [`python/`](python/)
 
 Two views, one library. **Inner city** — how a single community varies inside itself (tracts, block groups, neighborhoods). **Outer city** — how a city compares to its peers (counties, places, subdivisions). Both bind ACS five-year data (with your own Census API key), drill down with breadcrumbs, animate over time, and keep their state in a shareable URL. Not everything planned is built: see [What works today](#what-works-today).
 

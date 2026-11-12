@@ -87,6 +87,7 @@ export class LocalVisionApp {
   private tourIndex = 0
   private timeBarEl: HTMLElement
   private timePlayBtn: HTMLButtonElement
+  private timeSwitchEl!: HTMLDivElement
   private timeSliderEl: HTMLInputElement
   private timeLabelEl: HTMLElement
   private loadingOverlayEl: HTMLElement
@@ -163,7 +164,7 @@ export class LocalVisionApp {
     this.activeView = options.defaultView ?? 'inner'
     this.innerBoundary = options.defaultInnerBoundary ?? 'tract'
     this.outerBoundary = options.defaultOuterBoundary ?? 'county'
-    this.geoLoader = new BoundaryLoader({ sessionCache: true })
+    this.geoLoader = options.boundaryLoader ?? new BoundaryLoader({ sessionCache: true })
     this.selection = new SelectionStore()
     this.drilldown = new DrilldownStore()
     this.time = new TimeStore()
@@ -302,6 +303,13 @@ export class LocalVisionApp {
     this.timeLabelEl = document.createElement('span')
     this.timeLabelEl.className = 'lv-time-current'
 
+    this.timeSwitchEl = document.createElement('div')
+    this.timeSwitchEl.className = 'lv-time-switch'
+    this.timeSwitchEl.setAttribute('role', 'group')
+    if (this.options.timeControl === 'switch') {
+      this.timeBarEl.classList.add('lv-time-bar-switch')
+      this.timeBarEl.appendChild(this.timeSwitchEl)
+    }
     this.timeBarEl.appendChild(this.timePlayBtn)
     this.timeBarEl.appendChild(startLabel)
     this.timeBarEl.appendChild(this.timeSliderEl)
@@ -313,6 +321,8 @@ export class LocalVisionApp {
       this.renderTimeBar(state, startLabel, endLabel)
       // Forward to active view (only OuterCityView supports time today)
       if (state.current != null) this.outerView?.setCurrentTime(state.current)
+      // Keep the shareable link in step with the chosen period
+      if (this.selectedCity && this.outerView) this.syncUrlState()
     })
 
     // ── Body ─────────────────────────────────────────────────────────────────
@@ -392,15 +402,25 @@ export class LocalVisionApp {
       // City-first: prefetch the nation-wide places index in the background
       // so the autocomplete is ready by the time the user starts typing.
       this.citySearchEl.placeholder = 'Loading US cities…'
-      void this.geoLoader
-        .placesIndex()
-        .then((entries) => {
+      const supplied = this.options.placesIndex
+      const indexPromise =
+        typeof supplied === 'function'
+          ? supplied()
+          : supplied
+            ? Promise.resolve(supplied)
+            : this.geoLoader.placesIndex()
+      void indexPromise
+        .then(async (entries) => {
           this.placesIndex = entries
-          this.citySearchEl.placeholder = 'Pick a city (e.g. Rosemount, MN)'
+          this.citySearchEl.placeholder = 'Search for a US city'
           this.citySearchEl.disabled = false
           // Once the index is ready, try to restore from URL hash. The
           // index makes city-by-geoid lookup instant; no need to refetch.
-          void this.restoreFromUrlIfAny()
+          const restored = await this.restoreFromUrlIfAny()
+          if (!restored && this.options.initialCity) {
+            const first = entries.find((p) => p.geoid === this.options.initialCity)
+            if (first) await this.selectCity(first)
+          }
         })
         .catch((err) => {
           console.error('[LocalVision] Failed to load US places index:', err)
@@ -414,21 +434,17 @@ export class LocalVisionApp {
    * The places index is required to map a GEOID back to a PlaceIndexEntry,
    * so this is called after the index resolves.
    */
-  private async restoreFromUrlIfAny(): Promise<void> {
+  private async restoreFromUrlIfAny(): Promise<boolean> {
     const state = readUrlState()
-    if (!state.city) return
+    if (!state.city) return false
     const entry = this.placesIndex.find((p) => p.geoid === state.city)
     if (!entry) {
       console.warn(`[LocalVision] URL state references unknown city geoid: ${state.city}`)
-      return
+      return false
     }
-    // Apply pre-selection state so loadView picks them up
-    if (state.view) this.activeView = state.view
-    if (state.level) {
-      if (state.view === 'outer') this.outerBoundary = state.level as OuterLevel
-      else this.innerBoundary = state.level as InnerLevel
-    }
-    await this.selectCity(entry)
+    // selectCity resets view and level for a newly chosen city, so the
+    // saved ones are handed to it rather than set beforehand.
+    await this.selectCity(entry, { view: state.view, level: state.level })
     // After select: optionally toggle compare mode, set KPIs, set time
     if (state.compare && !this.compareEnabled) this.toggleCompareMode()
     if (state.kpi) this.outerView?.setActiveKpi?.(state.kpi)
@@ -438,6 +454,7 @@ export class LocalVisionApp {
       const n = Number(t)
       this.time.setCurrent(isFinite(n) ? n : t)
     }
+    return true
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -561,7 +578,10 @@ export class LocalVisionApp {
    * Also show/hide the KPI-pill divider (only relevant in outer mode).
    */
   private syncHeaderForView(view: ViewMode): void {
-    const levels = view === 'inner' ? INNER_LEVELS : OUTER_LEVELS
+    const levels =
+      view === 'inner'
+        ? (this.options.levels?.inner ?? INNER_LEVELS)
+        : (this.options.levels?.outer ?? OUTER_LEVELS)
     const savedValue = view === 'inner' ? this.innerBoundary : this.outerBoundary
 
     // Rebuild <option> list
@@ -791,7 +811,9 @@ export class LocalVisionApp {
     // types "rosemount, mn" so MN entries are prioritized.
     const stateFilter = extractStateAbbr(query)
 
-    // Score: name startsWith > name includes; cap at 25 results
+    // Score: name startsWith > name includes. Within each group the largest
+    // place comes first when populations are known, so "Minneapolis" offers
+    // Minnesota's before Kansas's. Cap at 25 results.
     const startsWith: PlaceIndexEntry[] = []
     const includes: PlaceIndexEntry[] = []
     for (const p of this.placesIndex) {
@@ -799,8 +821,10 @@ export class LocalVisionApp {
       const nameLower = p.name.toLowerCase()
       if (nameLower.startsWith(q)) startsWith.push(p)
       else if (nameLower.includes(q)) includes.push(p)
-      if (startsWith.length >= 25) break
     }
+    const bySize = (a: PlaceIndexEntry, b: PlaceIndexEntry) => (b.population ?? 0) - (a.population ?? 0)
+    startsWith.sort(bySize)
+    includes.sort(bySize)
     const matches = [...startsWith, ...includes].slice(0, 25)
 
     if (matches.length === 0) {
@@ -831,7 +855,10 @@ export class LocalVisionApp {
    * Handler for picking a city from the autocomplete. Fetches the city's
    * polygon, then triggers the initial Outer City load.
    */
-  private async selectCity(city: PlaceIndexEntry): Promise<void> {
+  private async selectCity(
+    city: PlaceIndexEntry,
+    restore?: { view?: ViewMode; level?: string },
+  ): Promise<void> {
     console.log('[LocalVision] selectCity:', city.displayName, city.stateFips, city.geoid)
 
     this.selectedCity = city
@@ -847,13 +874,18 @@ export class LocalVisionApp {
     this.boundarySelectEl.style.display = ''
     this.settingsBtn.style.display = ''
     this.compareBtn.style.display = ''
-    this.exportBtn.style.display = ''
+    this.exportBtn.style.display = this.options.hideExport ? 'none' : ''
 
     // Reset state for the new city
     this.loadedViews.clear()
     this.activeView = 'inner'
     this.outerBoundary = this.options.defaultOuterBoundary ?? 'county'
     this.innerBoundary = this.options.defaultInnerBoundary ?? 'tract'
+    if (restore?.view) this.activeView = restore.view
+    if (restore?.level) {
+      if (this.activeView === 'outer') this.outerBoundary = restore.level as OuterLevel
+      else this.innerBoundary = restore.level as InnerLevel
+    }
 
     // Show the loading overlay IMMEDIATELY, before any await. This is a
     // belt-and-suspenders direct call — bypasses the drilldown subscription
@@ -865,10 +897,20 @@ export class LocalVisionApp {
     let errored = false
     try {
       // City polygon: pull places-of-state, find by GEOID
-      const placesFc = await this.geoLoader.places(city.stateFips)
-      const cityFeature =
-        placesFc.features.find((f) => String(f.properties?.['GEOID'] ?? '') === city.geoid) ?? null
-      this.selectedCityFeature = cityFeature as GeoJsonFeature | null
+      // The outline is a nicety (a highlight plus a tighter county scope).
+      // A region entry has none, and a failed lookup must not block the data.
+      let cityFeature: GeoJsonFeature | null = null
+      if (!city.region) {
+        try {
+          const placesFc = await this.geoLoader.places(city.stateFips)
+          cityFeature = (placesFc.features.find(
+            (f) => String(f.properties?.['GEOID'] ?? '') === city.geoid,
+          ) ?? null) as GeoJsonFeature | null
+        } catch (err) {
+          console.warn('[LocalVision] Could not load the place outline; continuing without it:', err)
+        }
+      }
+      this.selectedCityFeature = cityFeature
 
       // Resolve containing county via point-in-polygon (bbox-center → counties).
       // Used as the parent context when Inner view loads, so tract / bg fetches
@@ -881,8 +923,7 @@ export class LocalVisionApp {
 
       // Load Inner City first (default view) — shows city's containing
       // county's tracts. Outer City lazy-loads when the user toggles to it.
-      console.log('[LocalVision] selectCity → loadView(inner)')
-      await this.loadView('inner')
+      await this.loadView(this.activeView)
       console.log('[LocalVision] selectCity → loadView done in', Math.round(performance.now() - tStart), 'ms')
       this.recordTiming('state', performance.now() - tStart)
 
@@ -1002,6 +1043,7 @@ export class LocalVisionApp {
       this.breadcrumbEl.style.display = ''
       this.syncTimeForBinding(cached)
       if (this.selectedCityFeature) this.outerView?.setCityFocus(this.selectedCityFeature)
+      this.syncUrlState()
       return
     }
 
@@ -1049,6 +1091,8 @@ export class LocalVisionApp {
       }
 
       this.recordTiming(level, performance.now() - start)
+      // The shareable link follows view and level changes, not only city picks
+      this.syncUrlState()
     } catch (err) {
       console.error(`[LocalVision] Failed to load ${view} view:`, err)
       // Re-throw so the caller (e.g. selectCity) can show the error in the
@@ -1282,8 +1326,12 @@ export class LocalVisionApp {
    */
   private syncTimeForBinding(binding: DataBinding): void {
     const axis = binding.table.timeAxis
-    if (axis && axis.times.length >= 2) {
-      this.time.setTimes([...axis.times], undefined, axis.label)
+    const minTimes = this.options.timeControl === 'switch' ? 1 : 2
+    if (axis && axis.times.length >= minTimes) {
+      // Keep the period the visitor chose when the new level also has it
+      const chosen = this.time.currentValue()
+      const keep = chosen != null && axis.times.includes(chosen) ? chosen : undefined
+      this.time.setTimes([...axis.times], keep, axis.label)
       this.timeBarEl.style.display = ''
     } else {
       this.time.setTimes([])
@@ -1308,11 +1356,35 @@ export class LocalVisionApp {
     startLabel: HTMLElement,
     endLabel: HTMLElement,
   ): void {
-    if (state.times.length < 2) {
+    if (state.times.length < (this.options.timeControl === 'switch' ? 1 : 2)) {
       this.timeBarEl.style.display = 'none'
       return
     }
     this.timeBarEl.style.display = ''
+
+    if (this.options.timeControl === 'switch') {
+      this.timeSwitchEl.setAttribute('aria-label', state.label ?? 'Period')
+      this.timeSwitchEl.innerHTML = ''
+      state.times.forEach((t, i) => {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'lv-time-switch-btn'
+        b.textContent = String(t)
+        b.setAttribute('aria-pressed', String(i === state.currentIndex))
+        if (i === state.currentIndex) b.classList.add('lv-active')
+        b.addEventListener('click', () => this.time.setIndex(i))
+        this.timeSwitchEl.appendChild(b)
+      })
+      // With a single period the axis label doubles as the explanation of
+      // why there is nothing to switch to.
+      if (state.times.length === 1 && state.label) {
+        const note = document.createElement('span')
+        note.className = 'lv-time-note'
+        note.textContent = state.label
+        this.timeSwitchEl.appendChild(note)
+      }
+      return
+    }
 
     this.timeSliderEl.min = '0'
     this.timeSliderEl.max = String(state.times.length - 1)
