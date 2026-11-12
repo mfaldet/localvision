@@ -1,7 +1,7 @@
 {
   "name": "localvision",
   "version": "0.1.0",
-  "description": "Beautiful community data visualization — interactive maps + linked KPI charts",
+  "description": "Beautiful community data visualization \u2014 interactive maps + linked KPI charts",
   "type": "module",
   "main": "./dist/localvision.umd.cjs",
   "module": "./dist/localvision.js",
@@ -29,7 +29,10 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build",
+    "demo:dev": "vite --config demo/vite.config.ts",
+    "demo:build": "vite build --config demo/vite.config.ts",
+    "demo:data": "python3 scripts/build-demo-data.py"
   },
   "keywords": [
     "data-visualization",

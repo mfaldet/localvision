@@ -95,6 +95,8 @@ export class OuterCityView {
   private onDrillRequest?: (c: { id: string; label: string; properties: Record<string, unknown> }) => void
   private activeBinding: DataBinding | null = null
   private currentTime: string | number | null = null
+  /** Latest time asked for. The map applies it a frame later, so compare requests against this, not currentTime. */
+  private requestedTime: string | number | null = null
   private styleConfig: ChoroplethStyleConfig = { ...DEFAULT_STYLE_CONFIG }
   /** User-drawn polygon clipping which features are emphasized vs dimmed. */
   private clipPolygon: import('../types').GeoJsonFeature | null = null
@@ -131,6 +133,7 @@ export class OuterCityView {
       // For temporal bindings, default to the most recent time
       const times = options.binding.table.timeAxis?.times
       this.currentTime = times ? times[times.length - 1] : null
+      this.requestedTime = this.currentTime
       this.communities = bindingToCommunities(options.binding, this.currentTime)
       const kpiDefs = options.kpiDefs ?? bindingToKpiDefs(options.binding)
       this.kpiDefs = new Map(kpiDefs.map((k) => [k.id, k]))
@@ -165,6 +168,7 @@ export class OuterCityView {
 
     // Body row (map + panel)
     const body = document.createElement('div')
+    body.className = 'lv-view-body'
     body.style.cssText = 'display:flex;flex:1;min-height:0;'
     this.root.appendChild(body)
 
@@ -202,6 +206,13 @@ export class OuterCityView {
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
 
     this.map.on('load', () => {
+      // On a narrow map the credit starts collapsed behind its (i) button so
+      // it does not cover the data; one tap opens it.
+      if (this.mapEl.clientWidth < 640) {
+        const attrib = this.mapEl.querySelector('.maplibregl-ctrl-attrib')
+        attrib?.classList.remove('maplibregl-compact-show')
+        attrib?.removeAttribute('open')
+      }
       this.addCommunityLayers()
       this.fitToAllCommunities()
       // Apply any selection state that arrived before the map was ready
@@ -284,6 +295,7 @@ export class OuterCityView {
     // Reset currentTime: prefer the most recent if the new binding is temporal
     const times = binding.table.timeAxis?.times
     this.currentTime = times ? times[times.length - 1] : null
+    this.requestedTime = this.currentTime
 
     this.communities = bindingToCommunities(binding, this.currentTime)
     const kpiDefs = bindingToKpiDefs(binding)
@@ -345,7 +357,8 @@ export class OuterCityView {
    */
   setCurrentTime(time: string | number): void {
     if (!this.activeBinding?.table.timeAxis) return
-    if (time === this.currentTime) return
+    if (time === this.requestedTime) return
+    this.requestedTime = time
 
     // Map repaint: rAF-batched so rapid scrubbing renders at most once per
     // frame with the latest value. Panel re-render: debounced so the

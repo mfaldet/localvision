@@ -1289,3 +1289,150 @@
 .lv-annotation-del:hover {
   color: #ef4444;
 }
+
+/* ── Period switch (timeControl: 'switch') ──────────────────────────────── */
+
+.lv-time-bar-switch .lv-time-play,
+.lv-time-bar-switch .lv-time-range-label,
+.lv-time-bar-switch .lv-time-slider,
+.lv-time-bar-switch .lv-time-current {
+  display: none;
+}
+
+.lv-time-switch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lv-time-switch-btn {
+  padding: 5px 12px;
+  background: var(--lv-color-surface-elevated);
+  color: var(--lv-color-text-muted);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 6px;
+  font-family: var(--lv-font);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.lv-time-switch-btn:hover { color: var(--lv-color-text); }
+
+.lv-time-switch-btn.lv-active {
+  background: var(--lv-color-primary);
+  border-color: var(--lv-color-primary);
+  color: #fff;
+}
+
+.lv-time-note {
+  color: var(--lv-color-text-muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+/* ── Phone layout ───────────────────────────────────────────────────────────
+   Below 720px the header wraps onto several rows, the map sits above the
+   figures instead of beside them, and the settings panel becomes a sheet
+   along the bottom of the screen. */
+
+@media (max-width: 720px) {
+  .lv-app-header {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    row-gap: 8px;
+  }
+
+  .lv-city-search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .lv-city-search-input,
+  .lv-boundary-select {
+    height: 40px;
+    font-size: 16px; /* below 16px iOS zooms the page when the field is focused */
+  }
+
+  .lv-city-search-option { padding-top: 12px; padding-bottom: 12px; font-size: 15px; }
+
+  .lv-view-toggle-btn { min-height: 40px; padding-left: 12px; padding-right: 12px; }
+
+  .lv-boundary-select { flex: 1 1 0; min-width: 0; }
+
+  .lv-settings-btn,
+  .lv-export-btn { width: 40px; height: 40px; }
+
+  /* two maps side by side do not fit */
+  .lv-compare-btn,
+  .lv-header-divider { display: none !important; }
+
+  .lv-app-header .lv-kpi-selector {
+    flex: 1 1 100%;
+    order: 10;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0 0 2px;
+    border: 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .lv-app-header .lv-kpi-selector::-webkit-scrollbar { display: none; }
+
+  .lv-kpi-pill { flex: 0 0 auto; padding: 9px 14px; min-height: 36px; }
+
+  .lv-breadcrumb,
+  .lv-time-bar { padding: 6px 12px; flex-wrap: wrap; }
+
+  /* At the top level the breadcrumb only repeats the search box; show it once the visitor has drilled in. */
+  .lv-breadcrumb:not(:has(.lv-breadcrumb-item ~ .lv-breadcrumb-item)) { display: none !important; }
+
+  .lv-breadcrumb-item { padding-top: 6px; padding-bottom: 6px; }
+
+  .lv-time-switch-btn { padding: 8px 14px; font-size: 13px; min-height: 36px; }
+
+  .lv-time-note { flex: 1 1 140px; font-size: 11px; line-height: 1.3; }
+
+  .lv-view-body { flex-direction: column; }
+
+  .lv-view-body > .lv-map-pane {
+    width: 100% !important;
+    height: auto;
+    flex: 0 0 max(240px, 44vh);
+    flex-basis: max(240px, 44dvh);
+    min-height: 0;
+  }
+
+  .lv-view-body > .lv-chart-pane {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+    border-left: 0;
+    border-top: 1px solid var(--lv-color-border);
+  }
+
+  .lv-view-body > .lv-resize-handle { display: none; }
+
+  .lv-settings-panel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 72vh;
+    overflow-y: auto;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: 400;
+  }
+
+  .lv-clip-btn,
+  .lv-line-pattern-btn { min-height: 40px; }
+
+  .lv-map-pane .maplibregl-ctrl-attrib { font-size: 11px; opacity: 0.9; }
+}

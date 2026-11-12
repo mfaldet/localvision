@@ -12,7 +12,7 @@ A prioritized plan for getting LocalVision from "promising skeleton" to "full-si
 
 **Planned, not built:** chart-to-map filtering and brushing, SVG and PDF export, swipe and difference comparison, grid-of-years view and year-over-year change, a public layer call and layer reordering, brand themes, a Public Health template, a generated API reference and gallery, browser end-to-end tests, release automation, publishing to npm and PyPI.
 
-74 unit tests across 8 files. CI on Node 18/20. Not published to npm or PyPI.
+78 unit tests across 9 files. CI on Node 18/20. Not published to npm or PyPI.
 
 Each bundle heading below carries its own status: **built**, **partly built** (with what is missing), or **not built**.
 

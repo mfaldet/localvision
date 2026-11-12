@@ -29,7 +29,7 @@ export const DEFAULT_THEME: ResolvedTheme = {
   colorTextMuted: '#8B92B4',
   colorTextInverse: '#0F1117',
   borderRadius: '8px',
-  mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  mapStyle: 'https://tiles.openfreemap.org/styles/dark',
   chartPalette: [
     '#3B82F6', // blue
     '#10B981', // emerald
@@ -46,7 +46,7 @@ export const DEFAULT_THEME: ResolvedTheme = {
  * Light theme preset. Pass to LocalVisionApp as `theme: LIGHT_THEME` (or
  * spread into the options to override specific values).
  *
- * Designed for use with CARTO's "positron" basemap — light gray
+ * Designed for use with a light "positron" basemap — light gray
  * background with high-contrast labels. Choropleth colors still pop on
  * the lighter surface; the chart palette is tuned for white backgrounds.
  */
@@ -62,7 +62,7 @@ export const LIGHT_THEME: ResolvedTheme = {
   colorTextMuted: '#64748B',        // slate-500
   colorTextInverse: '#FFFFFF',
   borderRadius: '8px',
-  mapStyle: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  mapStyle: 'https://tiles.openfreemap.org/styles/positron',
   chartPalette: [
     '#2563EB', // blue-600
     '#059669', // emerald-600
@@ -99,19 +99,14 @@ export const THEME_PRESETS: Record<string, ResolvedTheme> = {
   light: LIGHT_THEME,
 }
 
-export function resolveTheme(overrides?: ThemeOverrides): ResolvedTheme {
-  return {
-    ...DEFAULT_THEME,
-    ...(overrides?.fontFamily ? { fontFamily: overrides.fontFamily } : {}),
-    ...(overrides?.colorPrimary ? { colorPrimary: overrides.colorPrimary } : {}),
-    ...(overrides?.colorAccent ? { colorAccent: overrides.colorAccent } : {}),
-    ...(overrides?.colorBackground ? { colorBackground: overrides.colorBackground } : {}),
-    ...(overrides?.colorSurface ? { colorSurface: overrides.colorSurface } : {}),
-    ...(overrides?.colorText ? { colorText: overrides.colorText } : {}),
-    ...(overrides?.colorTextMuted ? { colorTextMuted: overrides.colorTextMuted } : {}),
-    ...(overrides?.borderRadius ? { borderRadius: overrides.borderRadius } : {}),
-    ...(overrides?.mapStyle ? { mapStyle: overrides.mapStyle as string } : {}),
-  }
+export function resolveTheme(overrides?: ThemeOverrides | Partial<ResolvedTheme>): ResolvedTheme {
+  // Copy every key the caller set. Passing a full preset such as LIGHT_THEME
+  // must carry its border and elevated-surface colors too, not only the
+  // handful of keys ThemeOverrides names.
+  const set = Object.fromEntries(
+    Object.entries(overrides ?? {}).filter(([, v]) => v !== undefined && v !== ''),
+  ) as Partial<ResolvedTheme>
+  return { ...DEFAULT_THEME, ...set }
 }
 
 export function applyThemeToDom(el: HTMLElement, theme: ResolvedTheme): void {

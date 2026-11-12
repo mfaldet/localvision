@@ -7,14 +7,14 @@ import { defineConfig } from 'vitepress'
  * Production build: npm run docs:build  →  docs/.vitepress/dist
  *
  * Deployed to GitHub Pages via .github/workflows/docs.yml on every push
- * to main. The `base` matches the repo name so asset URLs resolve under
- * https://mfaldet.github.io/localvision/.
+ * to main. The live demo is the front page of the site, so the docs sit
+ * one level down: https://mfaldet.github.io/localvision/docs/.
  */
 export default defineConfig({
   title: 'LocalVision',
   description:
     'Interactive community-data dashboards — Census boundaries with linked maps + charts.',
-  base: '/localvision/',
+  base: '/localvision/docs/',
   lang: 'en-US',
   cleanUrls: true,
   lastUpdated: true,
@@ -34,6 +34,7 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
+      { text: 'Live demo', link: 'https://mfaldet.github.io/localvision/', target: '_self' },
       { text: 'Guide', link: '/getting-started' },
       { text: 'Python', link: '/python' },
       {
