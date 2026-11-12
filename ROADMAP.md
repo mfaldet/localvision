@@ -4,25 +4,17 @@ A prioritized plan for getting LocalVision from "promising skeleton" to "full-si
 
 ## Status
 
-**All 15 bundles fully shipped** 🎉🎉
+**Partly built.** An earlier version of this file said all 15 bundles had shipped. That was not accurate. In November 2026 each feature was run in a browser, and the lists below are the result. The README carries the same lists in more detail.
 
-- ✅ Wave 1: Data Foundation · Cross-filtering · Drill-down · Time Dimension
-- ✅ Wave 2: Custom Layers · Comparison Mode · Python Bridge · Export & Sharing
-- ✅ Wave 3: Annotation · Theming · Performance · Accessibility
-- ✅ Wave 4: DX/Docs · Quality & Release · Templates
+**Works:** Census boundaries, city search, map-to-panel linking, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
 
-Every bundle, including all previously-deferred extensions, is now
-complete:
-- **Bundle 9 (Annotation):** markers + bookmarks + freehand polygon/line
-  drawing + auto-advancing bookmark tour.
-- **Bundle 11 (Performance):** time-scrub + resize coalescing + memoized
-  aggregation + opt-in web worker + BYO vector-tile source helpers.
-- **Bundle 13 (DX/Docs):** README + guides + hosted VitePress docs site
-  with GitHub Pages deploy.
+**Works, with known faults:** ACS data binding (needs your own Census API key), city search (can fail on first load; matches not ranked by size), PNG export (fails in Chrome), comparison mode (side by side only), shareable links (do not follow view switches), OpenStreetMap layers (not confirmed), Python wrapper (not on PyPI, not checked in a notebook), phone layout (does not fit), accessibility (charts lack screen-reader labels).
+
+**Planned, not built:** chart-to-map filtering and brushing, SVG and PDF export, swipe and difference comparison, grid-of-years view and year-over-year change, a public layer call and layer reordering, brand themes, a Public Health template, a generated API reference and gallery, browser end-to-end tests, release automation, publishing to npm and PyPI.
 
 78 unit tests across 9 files. CI on Node 18/20. Not published to npm or PyPI.
 
-Mark legend: ✅ shipped, 🚧 in progress, blank = not started.
+Each bundle heading below carries its own status: **built**, **partly built** (with what is missing), or **not built**.
 
 ## Current state
 
@@ -56,8 +48,9 @@ Effort scale: **S** = ~1 day · **M** = 2–3 days · **L** = 3–7 days · **XL
 
 These four bundles together transform the library from "pretty shell" into something a researcher could actually use to study a community.
 
-### 1. Data Foundation [L]  ✅
+### 1. Data Foundation [L]
 
+**Status:** built — live ACS data needs your own Census API key; CSV import is not exercised by any example.
 **Capability:** Bind real tabular data (CSV/Pandas/Census ACS) to Census geographies. Stop hand-writing community objects.
 
 **Scope:**
@@ -73,8 +66,9 @@ These four bundles together transform the library from "pretty shell" into somet
 
 **After:** Try binding the datasets you gathered, report friction. Decide if any of the test datasets reveal a missing data type.
 
-### 2. Cross-filtering / Interlinking [M]  ✅
+### 2. Cross-filtering / Interlinking [M]
 
+**Status:** partly built — map click updates the panel; chart click, brushing and map polygon-select filtering are not built.
 **Capability:** The "linked KPIs" promise. Click in a chart → highlight on the map. Brush on the map → filter the charts.
 
 **Scope:**
@@ -90,8 +84,9 @@ These four bundles together transform the library from "pretty shell" into somet
 
 **After:** Pressure-test with real data. Identify any slow-feeling interactions for performance bundle later.
 
-### 3. Hierarchical Drill-down [M]  ✅
+### 3. Hierarchical Drill-down [M]
 
+**Status:** built — click a feature, then "Drill into"; auto-drill on zoom is not built.
 **Capability:** Click a county → zoom in + load its tracts. Click a tract → zoom in + load its block groups. Breadcrumb to navigate back.
 
 **Scope:**
@@ -106,8 +101,9 @@ These four bundles together transform the library from "pretty shell" into somet
 
 **After:** Validate drill paths feel natural. Identify hierarchies that break (e.g., Virginia's independent cities).
 
-### 4. Time Dimension [M]  ✅
+### 4. Time Dimension [M]
 
+**Status:** partly built — slider and playback work; the grid-of-years view and year delta are not built.
 **Capability:** Animated playback of community metrics over time. Time slider, year-over-year deltas, small-multiples.
 
 **Scope:**
@@ -131,8 +127,9 @@ These four bundles together transform the library from "pretty shell" into somet
 
 These bundles broaden the library's audience and use cases beyond a single-purpose dashboard.
 
-### 5. Custom Layers System [M]  ✅
+### 5. Custom Layers System [M]
 
+**Status:** partly built — layer panel and OSM presets exist but were not confirmed working; the public `addLayer` call and reordering are not built.
 **Capability:** Add POI / transit / park / road / user-GeoJSON layers on top of community data.
 
 **Scope:**
@@ -147,8 +144,9 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 **After:** Test with custom POI data. Resolve any tooltip-vs-tooltip interaction conflicts.
 
-### 6. Comparison Mode [L]  ✅
+### 6. Comparison Mode [L]
 
+**Status:** partly built — side-by-side maps as a mode of the main view; delta map and swipe are not built, and there is no `ComparisonView` class.
 **Capability:** Side-by-side maps. Compare 2 KPIs, or 2 years, or 2 areas — with synchronized pan/zoom.
 
 **Scope:**
@@ -163,8 +161,9 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 **After:** Test cognitive load — is side-by-side too much? Decide if comparison should be its own view or a mode.
 
-### 7. Python Bridge (anywidget) [L]  ✅
+### 7. Python Bridge (anywidget) [L]
 
+**Status:** partly built — package installs and its bundle builds; not on PyPI, no example notebooks, not checked in Jupyter.
 **Capability:** Use LocalVision from Jupyter / Python with pandas DataFrames.
 
 **Scope:**
@@ -180,8 +179,9 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 **After:** Stress-test with a real notebook workflow. Identify any Python-side helpers that are missing.
 
-### 8. Export & Sharing [M]  ✅
+### 8. Export & Sharing [M]
 
+**Status:** partly built — shareable URL state works with one fault; PNG export fails in Chrome; SVG and PDF are not built.
 **Capability:** Export the current dashboard as PNG / SVG / PDF. Encode app state in shareable URLs.
 
 **Scope:**
@@ -205,8 +205,9 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 Production-grade quality. By the end of Wave 3, the library should feel good to use in real work.
 
-### 9. Annotation / Storytelling [L]  ✅
+### 9. Annotation / Storytelling [L]
 
+**Status:** built — markers, regions, lines, bookmarks and tour; text labels with leader lines are not built.
 **Capability:** Draw rectangles, polygons, lines, labels on the map. Save annotated views as bookmarks. Tour mode.
 
 **Scope:**
@@ -219,8 +220,9 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 **After:** Test storytelling workflows end-to-end. Identify annotation-vs-data conflicts.
 
-### 10. Theming & Customization [S]  ✅
+### 10. Theming & Customization [S]
 
+**Status:** partly built — light and dark themes and color-blind-safe palettes; brand presets are not built.
 **Capability:** Multiple themes (light + dark + brand). Color-blind palettes. Customization API.
 
 **Scope:**
@@ -233,8 +235,9 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 **After:** Validate readability across themes. Decide if runtime theme switching is part of the public API.
 
-### 11. Performance & Scale [L]  ✅
+### 11. Performance & Scale [L]
 
+**Status:** partly built — a web worker and vector-tile helpers exist in the code, but the app does not use them; nothing has been measured.
 **Capability:** Handle nation-wide data without lag.
 
 **Scope:**
@@ -247,8 +250,9 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 **After:** Measure against baseline. Document tradeoffs (bundle size, memory).
 
-### 12. Accessibility [M]  ✅
+### 12. Accessibility [M]
 
+**Status:** partly built — controls are reachable by keyboard; charts have no screen-reader labels and no contrast audit has been done.
 **Capability:** Keyboard navigation, screen reader labels, WCAG AA contrast.
 
 **Scope:**
@@ -269,8 +273,9 @@ Production-grade quality. By the end of Wave 3, the library should feel good to 
 
 Public release.
 
-### 13. Developer Experience & Docs [L]  ✅
+### 13. Developer Experience & Docs [L]
 
+**Status:** partly built — guides and a hosted docs site; the generated API reference and gallery are not built.
 **Capability:** Full docs site with API reference, guides, gallery.
 
 **Scope:**
@@ -283,8 +288,9 @@ Public release.
 
 **After:** Get feedback from first external user. Iterate on guide ordering.
 
-### 14. Quality & Release [M]  ✅
+### 14. Quality & Release [M]
 
+**Status:** partly built — unit tests and CI; end-to-end tests, release automation and publishing are not built.
 **Capability:** First public npm release with CI, tests, semver.
 
 **Scope:**
@@ -298,8 +304,9 @@ Public release.
 
 **After:** Monitor first downloads. Triage early GitHub issues.
 
-### 15. Real-world Templates [M]  ✅
+### 15. Real-world Templates [M]
 
+**Status:** partly built — equity, economic, housing and community templates; Public Health is not built.
 **Capability:** Opinionated dashboards out of the box.
 
 **Scope:**

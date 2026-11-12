@@ -1,10 +1,10 @@
 # LocalVision
 
-Interactive community-data dashboards on US Census boundaries: a choropleth map linked to brushable KPI charts, from state down to block group.
+Interactive community-data dashboards on US Census boundaries: a choropleth map linked to KPI charts, from county down to block group.
 
 **Docs:** https://mfaldet.github.io/localvision/docs/ · **Python/Jupyter wrapper:** [`python/`](python/)
 
-Two views, one library. **Inner city** — how a single community varies inside itself (tracts, block groups, neighborhoods). **Outer city** — how a city compares to its peers (counties, places, subdivisions). Both bind ACS five-year data directly, drill down with breadcrumbs, animate over time, and export to PNG or a shareable URL.
+Two views, one library. **Inner city** — how a single community varies inside itself (tracts, block groups, neighborhoods). **Outer city** — how a city compares to its peers (counties, places, subdivisions). Both bind ACS five-year data (with your own Census API key), drill down with breadcrumbs, animate over time, and keep their state in a shareable URL. Not everything planned is built: see [What works today](#what-works-today).
 
 ## Quick start
 
@@ -52,24 +52,45 @@ new LocalVisionApp({
 
 `examples/acs-binding.html` is the full demo — city search, time slider, drill-down, styling controls. `npm run dev` serves it.
 
-## What's in it
+## What works today
 
-| Capability | |
-|---|---|
-| US Census boundaries, state → block group (TIGERweb, cached) | ✅ |
-| ACS 5-year data binding — county, tract, place, and more | ✅ |
-| Linked map + KPI charts with cross-filtering | ✅ |
-| Hierarchical drill-down with breadcrumbs | ✅ |
-| Time slider and animated choropleth | ✅ |
-| City-first navigation (US place autocomplete) | ✅ |
-| Side-by-side comparison mode | ✅ |
-| Custom map layers — OSM presets for parks, schools, transit, hospitals | ✅ |
-| PNG export and shareable URL state | ✅ |
-| Display settings — color scheme, opacity, line style, clip area | ✅ |
-| Light, dark and color-blind-safe themes | ✅ |
-| Python / Jupyter wrapper (anywidget) | ✅ |
-| Dashboard templates — equity, housing, economic, community | ✅ |
-| Vitest unit tests, GitHub Actions CI | ✅ |
+This is an early project built by one person. The lists below come from running each feature in a browser in November 2026, not from the plan.
+
+**Works**
+
+- US Census boundaries loaded from TIGERweb and cached: counties, places, county subdivisions, tracts and block groups
+- City search across US places
+- Map and KPI panel linked one way: click an area on the map to see its figures; switch the measure to recolor the map
+- Drill-down from a county into its tracts, with breadcrumbs back
+- Time slider and animated playback
+- Display settings: color scheme (including color-blind-safe palettes), opacity, boundary color, pattern and width, and a clip area
+- Markers, drawn regions and lines, bookmarks and a bookmark tour, kept between visits
+- Light and dark themes
+- Dashboard templates: equity, housing, economic, community
+- 74 unit tests, run with a type check on every pull request
+
+**Works, with known faults**
+
+- ACS 5-year data binding needs your own Census API key. The Census API refuses requests without one, so the examples show no data until you add a key.
+- City search can fail on first load and say "City search unavailable"; reloading the page fixes it. Matches are not ranked by size, so "Minneapolis" lists the one in Kansas first.
+- PNG export fails in Chrome and downloads nothing. In comparison mode it saves only one of the two maps.
+- Side-by-side comparison opens two maps. There is no swipe or difference view.
+- Shareable links restore the city, level and year, but do not update when you switch between the inner and outer views.
+- OpenStreetMap layers (parks, schools, transit stops, hospitals) depend on the public Overpass servers and were not confirmed working in the last check.
+- The Python / Jupyter wrapper installs and builds, but is not on PyPI and has not been checked inside a notebook.
+- The layout does not fit a phone screen yet.
+- Keyboard navigation works, but charts have no screen-reader labels.
+
+**Planned, not built**
+
+- Clicking or brushing a chart to filter the map
+- SVG and PDF export
+- A grid-of-years view and year-over-year change
+- A public call for adding your own map layers, and layer reordering
+- A generated API reference and a gallery of examples
+- Browser end-to-end tests and release automation
+
+LocalVision is not published to npm or PyPI. See the [roadmap](ROADMAP.md) for the status of each planned piece.
 
 ## Docs
 
