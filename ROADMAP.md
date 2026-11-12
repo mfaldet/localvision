@@ -20,7 +20,7 @@ complete:
 - **Bundle 13 (DX/Docs):** README + guides + hosted VitePress docs site
   with GitHub Pages deploy.
 
-74 unit tests across 8 files. CI on Node 18/20. Not published to npm or PyPI.
+78 unit tests across 9 files. CI on Node 18/20. Not published to npm or PyPI.
 
 Mark legend: ✅ shipped, 🚧 in progress, blank = not started.
 

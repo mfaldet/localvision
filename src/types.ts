@@ -208,6 +208,31 @@ export interface LocalVisionAppOptions {
    * `defaultOuterBoundary` + `boundaryContext`.
    */
   rootDrilldownLevel?: import('./state/drilldown').DrilldownLevel
+  /**
+   * A ready-made search list, or a function that loads one. When set, the
+   * app does not fetch the nation-wide place list from TIGERweb. Entries
+   * with a `population` are ranked largest first.
+   */
+  placesIndex?:
+    | import('./geo/loader').PlaceIndexEntry[]
+    | (() => Promise<import('./geo/loader').PlaceIndexEntry[]>)
+  /**
+   * The loader the app uses for place outlines and county lookups. Pass
+   * the one your drillProvider uses so both share a cache and settings.
+   */
+  boundaryLoader?: import('./geo/loader').BoundaryLoader
+  /** GEOID of the search-list entry to open on when the URL names no city. */
+  initialCity?: string
+  /** Restrict the boundary levels offered in each view. */
+  levels?: { inner?: InnerLevel[]; outer?: OuterLevel[] }
+  /** Hide the PNG export button. */
+  hideExport?: boolean
+  /**
+   * How time is chosen. 'slider' (default) shows a slider with playback.
+   * 'switch' shows one button per time value — suited to two or three
+   * periods that should be compared, not animated.
+   */
+  timeControl?: 'slider' | 'switch'
 }
 
 export interface KpiDefinition {

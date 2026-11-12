@@ -1,10 +1,16 @@
-name: Deploy docs
+name: Deploy site
 
+# Builds the GitHub Pages site: the live demo at the root and the
+# documentation under /docs/.
 on:
   push:
     branches: [main]
     paths:
+      - 'demo/**'
       - 'docs/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/docs.yml'
   # Allow manual runs from the Actions tab
   workflow_dispatch:
@@ -37,13 +43,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build demo
+        run: npm run demo:build
+
       - name: Build docs
         run: npm run docs:build
+
+      - name: Put the docs under the demo
+        run: cp -r docs/.vitepress/dist demo/dist/docs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/.vitepress/dist
+          path: demo/dist
 
   deploy:
     needs: build
