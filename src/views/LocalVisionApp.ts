@@ -2,7 +2,6 @@ import type {
   LocalVisionAppOptions,
   ViewMode,
   LocalVisionEventMap,
-  BoundaryChangeEvent,
   GeoJsonFeatureCollection,
 } from '../types'
 import type { OuterLevel, InnerLevel } from '../geo/levels'

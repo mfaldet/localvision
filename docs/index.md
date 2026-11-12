@@ -36,8 +36,20 @@ features:
 
 ## Install
 
+LocalVision is not published to npm. Get the code from GitHub:
+
 ```bash
-npm install localvision
+git clone https://github.com/mfaldet/localvision.git
+cd localvision
+npm install
+npm run dev        # serves the full demo, examples/acs-binding.html
+```
+
+To use it in a project of your own, build it once and install it from the folder you cloned:
+
+```bash
+npm run build                    # in the localvision folder: library → dist/
+npm install ../localvision       # in your project: adjust the path to where you cloned it
 ```
 
 ## A dashboard in ten lines
