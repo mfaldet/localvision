@@ -109,6 +109,8 @@ export interface CommunityRecord {
   /** GeoJSON for this community */
   geojson: GeoJsonFeatureCollection
   kpis: Record<string, number>
+  /** Margins of error for `kpis`, keyed the same way, in the same units */
+  margins?: Record<string, number>
   /** Metadata fields shown in tooltip / detail panel */
   meta?: Record<string, string | number>
 }

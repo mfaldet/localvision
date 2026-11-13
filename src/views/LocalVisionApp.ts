@@ -11,7 +11,7 @@ import { getStateMeta, resolveStateFips } from '../geo/fips'
 import { bbox, bboxCenter, findFeatureContaining } from '../geo/spatial'
 import { LAYER_PRESETS } from '../layers/presets'
 import { fetchOverpassGeoJson } from '../layers/overpass'
-import { exportMapPng, exportAppPng } from '../export/png'
+import { exportAppPng } from '../export/png'
 import { readUrlState, writeUrlState, type UrlState } from '../export/url-state'
 import { getTemplate } from '../templates/presets'
 import type { GeoJsonFeature } from '../types'
@@ -463,6 +463,15 @@ export class LocalVisionApp {
     if (view === this.activeView) return
     // Save the current boundary selection before switching
     this.saveCurrentBoundary()
+    // With a city chosen, go through loadView: it reuses the cached data and
+    // also brings the breadcrumb, the time control and the shareable link in
+    // step with the view being shown. Mounting alone left those three
+    // describing the view just left.
+    if (this.selectedCity && this.options.drillProvider) {
+      this.selection.clear()
+      void this.loadView(view)
+      return
+    }
     this.destroyActiveView()
     this.activeView = view
     this.updateToggleUI()
@@ -1330,9 +1339,12 @@ export class LocalVisionApp {
     const axis = binding.table.timeAxis
     const minTimes = this.options.timeControl === 'switch' ? 1 : 2
     if (axis && axis.times.length >= minTimes) {
-      // Keep the period the visitor chose when the new level also has it
+      // Keep the period the visitor chose when the new level also has it.
+      // Coming from a level with a single period there was nothing to
+      // choose, so the new level opens on its own default (its last entry).
       const chosen = this.time.currentValue()
-      const keep = chosen != null && axis.times.includes(chosen) ? chosen : undefined
+      const hadChoice = this.time.getSnapshot().times.length > 1
+      const keep = hadChoice && chosen != null && axis.times.includes(chosen) ? chosen : undefined
       this.time.setTimes([...axis.times], keep, axis.label)
       this.timeBarEl.style.display = ''
     } else {
@@ -1966,13 +1978,13 @@ export class LocalVisionApp {
       const city = this.selectedCity?.displayName?.replace(/[^a-z0-9]+/gi, '-').toLowerCase() ?? 'view'
       const stamp = new Date().toISOString().slice(0, 10)
       const filename = `localvision-${city}-${stamp}.png`
-      if (this.compareEnabled) {
-        await exportMapPng(this.outerView.getMap(), filename)
-      } else {
-        await exportAppPng(this.root, filename)
-      }
+      // Every map on screen is captured: one normally, two in compare mode.
+      const maps = [this.outerView.getMap()]
+      if (this.outerViewCompare) maps.push(this.outerViewCompare.getMap())
+      await exportAppPng(this.root, filename, maps)
     } catch (err) {
       console.error('[LocalVision] export failed:', err)
+      this.showErrorOverlay('The picture could not be saved', err)
     } finally {
       this.exportBtn.disabled = false
       this.exportBtn.textContent = '⤓'

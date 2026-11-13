@@ -76,6 +76,16 @@ const DEFAULT_STYLE_CONFIG: ChoroplethStyleConfig = {
   lineWidth: 1,
   linePattern: 'solid',
 }
+/** Suffix of the feature property that carries a KPI's margin of error. */
+const MARGIN_SUFFIX = '__moe'
+
+/** Diverging, color-blind-safe (ColorBrewer PuOr): orange down, purple up. */
+const CHANGE_COLORS = {
+  down: ['#b35806', '#fdb863'],
+  up: ['#b2abd2', '#542788'],
+  neutral: '#9aa0ab',
+}
+
 const SELECTED_FILL = 'lv-selected-fill'
 
 export class OuterCityView {
@@ -119,6 +129,7 @@ export class OuterCityView {
   private scrubPanelUpdate!: (() => void) & { cancel: () => void; flush: () => void }
   /** Memoized distribution stats, keyed by `${kpiId}|${time}|${count}`. */
   private statsCache = new Map<string, DistributionStats>()
+  private legendEl: HTMLElement | null = null
 
   constructor(options: OuterCityOptions) {
     this.theme = resolveTheme(options.theme)
@@ -194,6 +205,7 @@ export class OuterCityView {
 
     // Init map
     const mapOpts = options.map ?? {}
+    const startBounds = this.dataBounds()
     this.map = new maplibregl.Map({
       container: this.mapEl,
       style: mapOpts.style ?? this.theme.mapStyle,
@@ -201,6 +213,10 @@ export class OuterCityView {
       zoom: mapOpts.zoom ?? 5,
       bearing: mapOpts.bearing ?? 0,
       pitch: mapOpts.pitch ?? 0,
+      // Start on the data, so the first frame is never an unrelated place
+      ...(startBounds && !mapOpts.center
+        ? { bounds: startBounds, fitBoundsOptions: { padding: 48 } }
+        : {}),
     })
 
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
@@ -1192,7 +1208,7 @@ export class OuterCityView {
         features.push({
           ...f,
           id: nextId,
-          properties: { ...f.properties, _lv_id: c.id, _lv_label: c.label, ...c.kpis },
+          properties: { ...f.properties, _lv_id: c.id, _lv_label: c.label, ...c.kpis, ...marginProps(c.margins) },
         })
         fids.push(nextId)
         nextId++
@@ -1203,6 +1219,7 @@ export class OuterCityView {
   }
 
   private addCommunityLayers(): void {
+    this.renderLegend()
     this.map.addSource(COMMUNITIES_SOURCE, {
       type: 'geojson',
       data: this.buildMergedGeoJson() as GeoJSON.FeatureCollection,
@@ -1310,6 +1327,7 @@ export class OuterCityView {
       kpiDef?.colorScale ??
       COLOR_SCHEMES[this.styleConfig.scheme] ??
       COLOR_SCHEMES.default
+    if (this.isChangeTime()) return this.buildChangeColorExpression()
     const values = this.communities.map((c) => c.kpis[this.activeKpi] ?? 0)
     const min = Math.min(...values)
     const max = Math.max(...values)
@@ -1334,18 +1352,105 @@ export class OuterCityView {
 
   private updateChoropleth(): void {
     this.map.setPaintProperty(CHOROPLETH_FILL, 'fill-color', this.buildColorExpression())
+    this.renderLegend()
   }
 
-  private fitToAllCommunities(): void {
+  // ── Change between periods ────────────────────────────────────────────────
+
+  /** True when the current time value is the binding's "change" entry. */
+  private isChangeTime(): boolean {
+    const change = this.activeBinding?.table.timeAxis?.change
+    return !!change && change.time === this.currentTime
+  }
+
+  /**
+   * Is this area's change larger than its margin of error? null when there
+   * is no value to judge.
+   */
+  private isMeasurable(c: CommunityRecord, kpi: string): boolean | null {
+    const v = c.kpis[kpi]
+    if (typeof v !== 'number') return null
+    return Math.abs(v) > (c.margins?.[kpi] ?? 0)
+  }
+
+  /** Format a value for the current mode: a signed percentage in change mode. */
+  private fmt(value: number, def: KpiDefinition): string {
+    return this.isChangeTime() ? formatChange(value) : formatKpiValue(value, def)
+  }
+
+  private fmtMargin(margin: number, def: KpiDefinition): string {
+    if (this.isChangeTime()) return `±${margin.toFixed(1)} pts`
+    return def.format === 'currency' ? `±$${margin.toLocaleString()}` : `±${margin.toLocaleString()}`
+  }
+
+  /**
+   * Diverging scale around zero. Areas whose change is within its margin of
+   * error get one neutral color; areas with no value are left unshaded. The
+   * scale tops out at the 90th percentile of measurable changes so one
+   * outlier does not wash out the rest.
+   */
+  private buildChangeColorExpression(): maplibregl.ExpressionSpecification {
+    const k = this.activeKpi
+    const cap = this.changeCap()
+    return [
+      'case',
+      ['!', ['has', k]], 'rgba(0,0,0,0)',
+      ['<=', ['abs', ['get', k]], ['coalesce', ['get', `${k}${MARGIN_SUFFIX}`], 0]], CHANGE_COLORS.neutral,
+      ['interpolate', ['linear'], ['get', k],
+        -cap, CHANGE_COLORS.down[0], -cap * 0.02, CHANGE_COLORS.down[1],
+        cap * 0.02, CHANGE_COLORS.up[0], cap, CHANGE_COLORS.up[1]],
+    ] as unknown as maplibregl.ExpressionSpecification
+  }
+
+  /** Size of change (in points) at which the change color scale tops out. */
+  private changeCap(): number {
+    const k = this.activeKpi
+    const sizes = this.communities
+      .filter((c) => this.isMeasurable(c, k))
+      .map((c) => Math.abs(c.kpis[k]))
+      .sort((x, y) => x - y)
+    return Math.max(1, sizes.length ? sizes[Math.floor((sizes.length - 1) * 0.9)] : 1)
+  }
+
+  /** Map legend. Shown in change mode, where the colors need explaining. */
+  private renderLegend(): void {
+    if (!this.isChangeTime()) {
+      this.legendEl?.remove()
+      this.legendEl = null
+      return
+    }
+    if (!this.legendEl) {
+      this.legendEl = document.createElement('div')
+      this.legendEl.className = 'lv-legend'
+      this.mapEl.appendChild(this.legendEl)
+    }
+    const def = this.kpiDefs.get(this.activeKpi)
+    const top = this.changeCap()
+    const cap = `${top.toFixed(top < 10 ? 1 : 0)}%`
+    const grad = (a: string, b: string) => `background:linear-gradient(90deg, ${a}, ${b})`
+    this.legendEl.innerHTML = `
+      <div class="lv-legend-title">${def?.label ?? ''}: change</div>
+      <div class="lv-legend-row"><i style="${grad(CHANGE_COLORS.up[0], CHANGE_COLORS.up[1])}"></i>Increase, up to +${cap} or more</div>
+      <div class="lv-legend-row"><i style="background:${CHANGE_COLORS.neutral}"></i>No measurable change</div>
+      <div class="lv-legend-row"><i style="${grad(CHANGE_COLORS.down[1], CHANGE_COLORS.down[0])}"></i>Decrease, down to −${cap} or more</div>
+      <div class="lv-legend-note">"No measurable change" means the change is within the survey's margin of error. Unshaded areas have no estimate.</div>
+    `
+  }
+
+  /** Bounding box of every area, or null when there is none. */
+  private dataBounds(): maplibregl.LngLatBounds | null {
     const bounds = new maplibregl.LngLatBounds()
     this.communities.forEach((c) => {
       c.geojson.features.forEach((f) => {
         collectCoords(f.geometry).forEach(([lng, lat]) => bounds.extend([lng, lat]))
       })
     })
-    if (!bounds.isEmpty()) {
-      this.map.fitBounds(bounds, { padding: 48, duration: 800 })
-    }
+    return bounds.isEmpty() ? null : bounds
+  }
+
+  private fitToAllCommunities(): void {
+    const bounds = this.dataBounds()
+    if (bounds) this.map.fitBounds(bounds, { padding: 48, duration: 800 })
   }
 
   private renderKpiSelector(): void {
@@ -1372,20 +1477,20 @@ export class OuterCityView {
     this.panelEl.innerHTML = ''
     const panelWidth = this.panelEl.clientWidth || 400
     const selectedIds = this.selection.getSnapshot().selected
-    // Single-select shows detail view; 0 or multi shows comparison
     const singleId = selectedIds.size === 1 ? [...selectedIds][0] : null
-    const selected = singleId ? this.communities.find((c) => c.id === singleId) : null
+    const selected = singleId ? (this.communities.find((c) => c.id === singleId) ?? null) : null
 
-    if (selected) {
-      this.renderCommunityDetail(selected, panelWidth)
-    } else {
-      this.renderComparisonCharts(panelWidth)
-    }
+    // The charts stay on screen whether or not an area is selected, so a
+    // selection can be read against the whole distribution: its figure sits
+    // above each chart and its position is marked on it.
+    if (selected) this.renderSelectionHeader(selected)
+    this.renderComparisonCharts(panelWidth, selected)
   }
 
-  private renderCommunityDetail(community: CommunityRecord, _width: number): void {
+  /** Name of the selected area, with the buttons that act on it. */
+  private renderSelectionHeader(community: CommunityRecord): void {
     const header = document.createElement('div')
-    header.className = 'lv-chart-card'
+    header.className = 'lv-chart-card lv-selection-header'
     header.style.borderBottom = `1px solid ${this.theme.colorBorder}`
 
     const name = document.createElement('p')
@@ -1407,7 +1512,7 @@ export class OuterCityView {
 
     const backBtn = document.createElement('button')
     backBtn.style.cssText = `background:none;border:1px solid ${this.theme.colorBorder};color:${this.theme.colorTextMuted};padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;`
-    backBtn.textContent = '← All communities'
+    backBtn.textContent = '← Clear selection'
     backBtn.addEventListener('click', () => this.selection.clear())
     btnRow.appendChild(backBtn)
 
@@ -1430,36 +1535,10 @@ export class OuterCityView {
 
     header.appendChild(btnRow)
     this.panelEl.appendChild(header)
-
-    // KPI value cards
-    this.kpiDefs.forEach((def) => {
-      const val = community.kpis[def.id]
-      if (val === undefined) return
-      const card = document.createElement('div')
-      card.className = `lv-chart-card${def.id === this.activeKpi ? ' lv-active' : ''}`
-      card.style.cursor = 'pointer'
-      card.addEventListener('click', () => this.setActiveKpi(def.id))
-
-      const label = document.createElement('p')
-      label.className = 'lv-chart-title'
-      label.textContent = def.label
-      card.appendChild(label)
-
-      const value = document.createElement('p')
-      value.style.cssText = `margin:0;font-size:28px;font-weight:700;color:${this.theme.colorText};letter-spacing:-0.02em;`
-      value.textContent = formatKpiValue(val, def)
-      card.appendChild(value)
-
-      this.panelEl.appendChild(card)
-    })
   }
 
-  private renderComparisonCharts(width: number): void {
+  private renderComparisonCharts(width: number, selected: CommunityRecord | null): void {
     // One distribution card per KPI. Active KPI rendered first + emphasized.
-    // The previous design also included a giant ranked-bar chart at the top,
-    // which became unreadable for fine-grained levels (600+ bars for block
-    // groups), so it's removed in favour of the more scalable distribution
-    // cards. Selection still flows via map clicks.
     const level = this.activeBinding?.table.meta?.geographyLevel
     const compatible = [...this.kpiDefs.values()].filter((def) => {
       if (!level || !def.availableAtLevels || def.availableAtLevels.length === 0) return true
@@ -1467,52 +1546,54 @@ export class OuterCityView {
     })
 
     const active = compatible.find((d) => d.id === this.activeKpi)
-    if (active) this.renderDistributionCard(active, width, true)
+    if (active) this.renderDistributionCard(active, width, true, selected)
     compatible.forEach((def) => {
-      if (def.id !== this.activeKpi) this.renderDistributionCard(def, width, false)
+      if (def.id !== this.activeKpi) this.renderDistributionCard(def, width, false, selected)
     })
   }
 
   /**
-   * Compact distribution card for a non-active KPI: title, min/median/max
-   * stats row, mini histogram, and (if a feature is selected) a marker line
-   * at the selected feature's value. Click the card to make this KPI active.
+   * One KPI: title, min/median/max, a histogram of every area with one dot
+   * per area beneath it, and (when an area is selected) that area's figure
+   * with its margin of error and a marker at its position.
+   *
+   * The chart is linked to the map both ways: the selected area is marked on
+   * it, and clicking the chart selects the area whose value is nearest the
+   * click. Clicking the title makes this KPI the active one.
    */
-  private renderDistributionCard(def: KpiDefinition, width: number, isActive = false): void {
+  private renderDistributionCard(
+    def: KpiDefinition,
+    width: number,
+    isActive: boolean,
+    selected: CommunityRecord | null,
+  ): void {
     const card = document.createElement('div')
     card.className = `lv-chart-card lv-distribution-card${isActive ? ' lv-active' : ''}`
     if (!isActive) {
-      card.title = `Click to make "${def.label}" the active KPI`
+      card.title = `Click the title to color the map by "${def.label}"`
       card.addEventListener('click', () => this.setActiveKpi(def.id))
-    } else {
-      card.title = `${def.label} — currently active (drives the choropleth)`
     }
 
-    // Gather + summarize values. Stats are memoized per (kpi, time,
-    // community-count) so scrubbing back to a previously-seen frame and
-    // re-renders within a frame don't re-sort large series.
-    const values = this.communities
-      .map((c) => c.kpis[def.id])
-      .filter((v): v is number => typeof v === 'number' && isFinite(v))
+    const change = this.isChangeTime()
 
+    // One entry per area that has a value
+    const items = this.communities
+      .map((c) => ({ id: c.id, label: c.label, v: c.kpis[def.id], m: c.margins?.[def.id] }))
+      .filter((d): d is { id: string; label: string; v: number; m: number | undefined } =>
+        typeof d.v === 'number' && isFinite(d.v),
+      )
+    const values = items.map((d) => d.v)
+
+    // Stats are memoized per (kpi, time, area-count) so scrubbing back to a
+    // previously-seen frame doesn't re-sort large series.
     const cacheKey = `${def.id}|${this.currentTime ?? ''}|${values.length}`
     let distStats = this.statsCache.get(cacheKey)
     if (!distStats) {
       distStats = computeDistributionStats(values)
       this.statsCache.set(cacheKey, distStats)
     }
-    const min = distStats.min
-    const max = distStats.max
-    const med = distStats.median
 
-    // Resolve a single-select for the marker
-    const selectedIds = this.selection.getSnapshot().selected
-    const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null
-    const selectedCommunity = selectedId
-      ? this.communities.find((c) => c.id === selectedId)
-      : null
-    const selectedValue = selectedCommunity?.kpis[def.id]
-    const selectedValid = typeof selectedValue === 'number' && isFinite(selectedValue)
+    const selectedItem = selected ? items.find((d) => d.id === selected.id) : undefined
 
     // ── Header: title + stats ──────────────────────────────────────────────
     const header = document.createElement('div')
@@ -1520,22 +1601,47 @@ export class OuterCityView {
 
     const title = document.createElement('p')
     title.className = 'lv-chart-title'
-    title.textContent = def.label
+    title.textContent = change ? `${def.label}: % change` : def.label
     header.appendChild(title)
 
     const stats = document.createElement('div')
     stats.className = 'lv-distribution-stats'
-    stats.innerHTML = `
-      <span>min <b>${formatKpiValue(min, def)}</b></span>
-      <span>med <b>${formatKpiValue(med, def)}</b></span>
-      <span>max <b>${formatKpiValue(max, def)}</b></span>
+    stats.innerHTML = values.length
+      ? `
+      <span>min <b>${this.fmt(distStats.min, def)}</b></span>
+      <span>med <b>${this.fmt(distStats.median, def)}</b></span>
+      <span>max <b>${this.fmt(distStats.max, def)}</b></span>
     `
+      : ''
     header.appendChild(stats)
     card.appendChild(header)
 
-    // ── Histogram ──────────────────────────────────────────────────────────
+    // ── The selected area's figure, with its margin of error ───────────────
+    if (selected) {
+      const figure = document.createElement('p')
+      figure.className = 'lv-figure'
+      if (selectedItem) {
+        const margin =
+          typeof selectedItem.m === 'number'
+            ? `<span class="lv-figure-margin" title="Margin of error at 90% confidence">${this.fmtMargin(selectedItem.m, def)}</span>`
+            : ''
+        const within = change && Math.abs(selectedItem.v) <= (selectedItem.m ?? 0)
+        figure.innerHTML =
+          `<span class="lv-figure-value">${this.fmt(selectedItem.v, def)}</span>${margin}` +
+          (within ? '<span class="lv-figure-tag">no measurable change</span>' : '')
+      } else {
+        figure.innerHTML = `<span class="lv-figure-none">${change ? 'Change cannot be worked out' : 'No estimate published'}</span>`
+      }
+      card.appendChild(figure)
+    }
+
+    // ── Histogram, one dot per area, marker for the selected area ──────────
     const chartEl = document.createElement('div')
     chartEl.className = 'lv-chart-container'
+    const readout = document.createElement('p')
+    readout.className = 'lv-chart-readout'
+    const idle = values.length ? 'Each dot is one area. Click the chart to select the nearest.' : 'No figures at this level.'
+    readout.textContent = idle
 
     if (values.length > 0) {
       const marks: Plot.Markish[] = [
@@ -1547,23 +1653,39 @@ export class OuterCityView {
           ),
         ),
         Plot.ruleY([0], { stroke: this.theme.colorBorder, strokeOpacity: 0.5 }),
+        Plot.dot(items, {
+          x: 'v',
+          y: 0,
+          dy: 7,
+          r: 2,
+          fill: this.theme.colorTextMuted,
+          fillOpacity: items.length > 400 ? 0.25 : 0.6,
+        }),
       ]
-      if (selectedValid) {
+      if (change) marks.push(Plot.ruleX([0], { stroke: this.theme.colorTextMuted, strokeDasharray: '2,3' }))
+      if (selectedItem) {
         marks.push(
-          Plot.ruleX([selectedValue as number], {
-            stroke: this.theme.colorAccent,
-            strokeWidth: 2,
+          Plot.ruleX([selectedItem.v], { stroke: this.theme.colorAccent, strokeWidth: 2 }),
+          Plot.dot([selectedItem], {
+            x: 'v',
+            y: 0,
+            dy: 7,
+            r: 5,
+            fill: this.theme.colorAccent,
+            stroke: this.theme.colorSurface,
+            strokeWidth: 1.5,
           }),
         )
       }
 
+      const plotWidth = Math.max(160, width - 48)
       const plot = Plot.plot({
-        width: width - 48,
-        height: isActive ? 130 : 78,
-        marginLeft: 8,
-        marginRight: 8,
+        width: plotWidth,
+        height: isActive ? 140 : 88,
+        marginLeft: 22,
+        marginRight: 22,
         marginTop: 6,
-        marginBottom: 22,
+        marginBottom: 32,
         style: {
           background: 'transparent',
           color: this.theme.colorTextMuted,
@@ -1573,25 +1695,42 @@ export class OuterCityView {
         },
         x: {
           tickSize: 0,
-          tickPadding: 6,
+          tickPadding: 16,
           line: false,
-          tickFormat: (d: number) => formatKpiValue(d, def),
+          label: null,
+          ticks: Math.max(3, Math.floor(plotWidth / 90)),
+          tickFormat: (d: number) => (change ? formatChange(d).replace('.0%', '%') : formatKpiValue(d, def)),
         },
         y: { axis: null },
         marks,
       })
-
       chartEl.appendChild(plot)
+
+      // Chart → map. The x scale turns a pointer position back into a value;
+      // the area with the nearest value is the one meant.
+      const xScale = plot.scale('x')
+      const nearest = (e: MouseEvent) => {
+        const rect = plot.getBoundingClientRect()
+        if (!xScale?.invert || rect.width === 0) return null
+        const value = xScale.invert(((e.clientX - rect.left) / rect.width) * plotWidth) as number
+        let best = items[0]
+        for (const d of items) if (Math.abs(d.v - value) < Math.abs(best.v - value)) best = d
+        return best
+      }
+      chartEl.style.cursor = 'pointer'
+      chartEl.addEventListener('mousemove', (e) => {
+        const d = nearest(e)
+        if (d) readout.innerHTML = `<b>${escapeHtml(d.label)}</b> · ${this.fmt(d.v, def)}${typeof d.m === 'number' ? ` ${this.fmtMargin(d.m, def)}` : ''}`
+      })
+      chartEl.addEventListener('mouseleave', () => { readout.textContent = idle })
+      chartEl.addEventListener('click', (e) => {
+        e.stopPropagation() // a click on the chart selects an area; it does not switch KPI
+        const d = nearest(e)
+        if (d) this.selection.selectFeatures([d.id], 'replace')
+      })
     }
     card.appendChild(chartEl)
-
-    // ── Selected feature indicator ─────────────────────────────────────────
-    if (selectedCommunity && selectedValid) {
-      const indicator = document.createElement('p')
-      indicator.className = 'lv-distribution-selected'
-      indicator.innerHTML = `<b>${selectedCommunity.label}</b> · ${formatKpiValue(selectedValue as number, def)}`
-      card.appendChild(indicator)
-    }
+    card.appendChild(readout)
 
     this.panelEl.appendChild(card)
   }
@@ -1608,10 +1747,15 @@ export class OuterCityView {
     const kpiDef = this.kpiDefs.get(this.activeKpi)
     const label = String(props['_lv_label'] ?? props['_lv_id'] ?? '—')
     const val = props[this.activeKpi]
+    const margin = props[`${this.activeKpi}${MARGIN_SUFFIX}`]
+    const hasVal = val !== undefined && val !== null
+    const hasMargin = typeof margin === 'number'
+    const within = this.isChangeTime() && hasVal && Math.abs(Number(val)) <= (hasMargin ? margin : 0)
 
     el.innerHTML = `
-      <div class="lv-tooltip-label">${label}</div>
-      ${kpiDef ? `<div class="lv-tooltip-row"><span>${kpiDef.label}</span><span>${val !== undefined ? formatKpiValue(Number(val), kpiDef) : '—'}</span></div>` : ''}
+      <div class="lv-tooltip-label">${escapeHtml(label)}</div>
+      ${kpiDef ? `<div class="lv-tooltip-row"><span>${kpiDef.label}${this.isChangeTime() ? ': change' : ''}</span><span>${hasVal ? this.fmt(Number(val), kpiDef) : '—'}${hasVal && hasMargin ? ` <small>${this.fmtMargin(margin, kpiDef)}</small>` : ''}</span></div>` : ''}
+      ${within ? '<div class="lv-tooltip-note">No measurable change</div>' : ''}
     `
 
     const x = Math.min(point.x + 12, this.mapEl.clientWidth - 240)
@@ -1669,6 +1813,22 @@ export class OuterCityView {
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] ?? ch)
+}
+
+/** A percentage change with an explicit sign, e.g. "+8.9%" or "−3.1%". */
+function formatChange(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
+  return `${sign}${Math.abs(value).toFixed(1)}%`
+}
+
+function marginProps(margins?: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(margins ?? {})) out[`${k}${MARGIN_SUFFIX}`] = v
+  return out
+}
+
 function formatKpiValue(value: number, def: KpiDefinition): string {
   switch (def.format) {
     case 'percent': return `${(value * 100).toFixed(1)}%`
@@ -1720,7 +1880,7 @@ function bindingToCommunities(
 ): CommunityRecord[] {
   // For temporal bindings, build a geoid → values index for the requested time.
   // Falls back to the most recent time if currentTime is not in the timeAxis.
-  let timeIndex: Map<string, Record<string, number | null>> | null = null
+  let timeIndex: Map<string, DataBinding['table']['rows'][number]> | null = null
   if (binding.table.timeAxis) {
     const times = binding.table.timeAxis.times
     const resolvedTime =
@@ -1729,7 +1889,7 @@ function bindingToCommunities(
         : times[times.length - 1]
     timeIndex = new Map()
     for (const row of binding.table.rows) {
-      if (row.time === resolvedTime) timeIndex.set(row.geoid, row.values)
+      if (row.time === resolvedTime) timeIndex.set(row.geoid, row)
     }
   }
 
@@ -1737,14 +1897,17 @@ function bindingToCommunities(
     const geoid = String(f.properties?.['_lv_geoid'] ?? '')
     const label = String(f.properties?.['_lv_label'] ?? geoid)
     const kpis: Record<string, number> = {}
+    const margins: Record<string, number> = {}
 
     if (timeIndex) {
       // Temporal: pull values from the time-filtered index
-      const values = timeIndex.get(geoid)
-      if (values) {
+      const row = timeIndex.get(geoid)
+      if (row) {
         for (const v of binding.table.variables) {
-          const val = values[v.key]
+          const val = row.values[v.key]
           if (typeof val === 'number') kpis[v.key] = val
+          const m = row.margins?.[v.key]
+          if (typeof m === 'number') margins[v.key] = m
         }
       }
     } else {
@@ -1760,6 +1923,7 @@ function bindingToCommunities(
       label,
       geojson: { type: 'FeatureCollection', features: [f] },
       kpis,
+      margins,
     }
   })
 }
