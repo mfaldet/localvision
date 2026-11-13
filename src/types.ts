@@ -225,6 +225,8 @@ export interface LocalVisionAppOptions {
   initialCity?: string
   /** Restrict the boundary levels offered in each view. */
   levels?: { inner?: InnerLevel[]; outer?: OuterLevel[] }
+  /** Replace the names of the two views (defaults: "Inner City", "Outer City"). */
+  viewLabels?: { inner?: string; outer?: string }
   /** Hide the PNG export button. */
   hideExport?: boolean
   /**
