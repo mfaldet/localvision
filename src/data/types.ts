@@ -38,6 +38,25 @@ export interface DataTable {
     source?: string          // e.g. 'Census ACS 5-year'
     year?: number
     geographyLevel?: string  // 'county', 'tract', etc.
+    /**
+     * A color scale that does not depend on what is on screen, so a color
+     * means the same value wherever the visitor looks — for comparing one
+     * place with another seen earlier. Views offer it as an alternative to
+     * fitting the colors to the current view.
+     *
+     * `breaks` are ascending values, typically evenly spaced percentiles of
+     * a wide reference set (every county in the country, say). The palette
+     * is spread evenly across them, so the most color steps fall where most
+     * areas are. `changeBreaks` do the same for the size of a percentage
+     * change and are used on both sides of zero.
+     */
+    fixedScale?: {
+      /** Short name for the reference set, shown on the switch (e.g. "All US"). */
+      label: string
+      /** One sentence saying what the fixed colors are measured against. */
+      description?: string
+      scales: Record<string, { breaks: number[]; changeBreaks?: number[] }>
+    }
     fetchedAt?: string       // ISO timestamp
   }
   /**

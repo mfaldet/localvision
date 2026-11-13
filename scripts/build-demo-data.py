@@ -141,6 +141,25 @@ def main():
             json.dump(doc, f, separators=(',', ':'))
         written += 1
 
+    # National color scales, so a color can mean the same thing wherever the visitor looks.
+    # Breaks sit at every 5th percentile of all areas of a level, which puts the most
+    # color steps where most areas are and keeps small differences visible.
+    # For change: percentiles of the size of the percentage change, used on both sides of zero.
+    scales = {}
+    pct = [i / 20 for i in range(21)]
+    for sumlevel, level in LEVELS.items():
+        ids = geos[geos.SUMLEVEL == sumlevel].GEO_ID
+        n, o = new.reindex(ids), old.reindex(ids)
+        scales[level] = {}
+        for k in keys:
+            entry = {'breaks': [round(float(v), 1) for v in n[k].dropna().quantile(pct)]}
+            if level != 'tract':
+                change = ((n[k] / o[k].where(o[k] > 0) - 1) * 100).dropna().abs()
+                entry['changeBreaks'] = [round(float(v), 2) for v in change.quantile([0.2, 0.4, 0.6, 0.8, 0.95])]
+            scales[level][k] = entry
+    with open(f'{a.out}/scales.json', 'w') as f:
+        json.dump({'basis': 'all areas of each level in the 50 states and DC, 2020-2024', 'levels': scales}, f, separators=(',', ':'))
+
     # search list: every place, largest first, so the biggest place of a name comes first
     p = geos[geos.SUMLEVEL == '160']
     pop = new['population']

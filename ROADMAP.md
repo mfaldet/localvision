@@ -8,13 +8,13 @@ A prioritized plan for getting LocalVision from "promising skeleton" to "full-si
 
 **Live demo:** https://mfaldet.github.io/localvision/ — opens on the Twin Cities metro, with figures saved in the page so it needs no API key.
 
-**Works:** Census boundaries, city search, shareable links, two-way linking of map and charts, margins of error beside figures, a change-between-periods view, PNG export, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
+**Works:** Census boundaries, city search, shareable links, two-way linking of map and charts, margins of error beside figures, a change-between-periods view, a fixed national color scale with a switch on the map, a pinned-place tab, PNG export, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
 
 **Works, with known faults:** ACS data binding (needs your own Census API key), city search without a saved list (slow first load; matches not ranked by size), live boundaries (slow for large counties), chart selection (nearest single area, no range brushing), change view (counties and cities only in the demo), PNG export (checked in Chrome only), comparison mode (two stacked maps, no swipe), OpenStreetMap layers (not confirmed), Python wrapper (not on PyPI, not checked in a notebook), phones (the page fits, but is the desktop arrangement stacked, not a phone design), accessibility (charts lack screen-reader labels).
 
 **Planned, not built:** brushing a range on a chart, SVG and PDF export, swipe comparison, grid-of-years view, a public layer call and layer reordering, brand themes, a Public Health template, a generated API reference and gallery, browser end-to-end tests, release automation, publishing to npm and PyPI.
 
-82 unit tests across 10 files. CI on Node 18/20. Not published to npm or PyPI.
+85 unit tests across 11 files. CI on Node 18/20. Not published to npm or PyPI.
 
 Each bundle heading below carries its own status: **built**, **partly built** (with what is missing), or **not built**.
 

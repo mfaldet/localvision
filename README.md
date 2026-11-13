@@ -76,6 +76,8 @@ This is an early project built by one person. The lists below come from running 
 - Margins of error beside each figure, when the data supplies them
 - Change between two periods: the map is colored by the percentage change, and any place whose change is within its margin of error is shown in a neutral color as "no measurable change"
 - The map opens on the data, not on a default spot on the globe
+- A fixed color scale, as an alternative to colors fitted to the view: breaks at every 5th percentile of a national reference set, so a color means the same value wherever you look and small differences still show. A legend on the map carries the switch
+- Pin a place: its figures for every period stay in a tab that slides out over the left of the map while you look at another place
 - PNG export of the whole view, including both maps in comparison mode
 - Drill-down from a county into its tracts, with breadcrumbs back
 - Time slider and animated playback, or a simple switch between a few periods
@@ -84,13 +86,15 @@ This is an early project built by one person. The lists below come from running 
 - Light and dark themes, on background maps from OpenFreeMap that need no key
 - Shareable links that keep the city, view, level and period
 - Dashboard templates: equity, housing, economic, community
-- 82 unit tests, run with a type check on every pull request
+- 85 unit tests, run with a type check on every pull request
 
 **Works, with known faults**
 
 - ACS 5-year data binding needs your own Census API key. The Census API refuses requests without one, so the examples show no data until you add a key.
 - Without a saved search list, city search loads the list from the Census boundary service state by state. That is slow on first load, and matches are not ranked by size.
 - Boundaries for most places are fetched live from the Census boundary service. A large county can take ten seconds or more the first time, and nothing loads if that service is down.
+- Comparing places means looking at one and then another, with the fixed scale and a pinned place to help. There is no side-by-side view of two places, by choice.
+- One place can be pinned at a time.
 - Clicking a chart selects the single area nearest the click. Dragging to select a range is not built.
 - The change view needs margins of error and two comparable periods, so the demo offers it for counties and cities only, not tracts. With many places on one map, a few will pass the margin test by chance.
 - County population totals carry no margin of error, so the change view shows any difference in them as a change.
