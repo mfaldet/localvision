@@ -148,6 +148,7 @@ function mount(): void {
     placesIndex: loadPlaces,
     boundaryLoader: loader,
     initialCity: METRO_ID,
+    viewLabels: { inner: 'Close up', outer: 'Wider area' },
     timeControl: 'switch',
     hideExport: true, // PNG export fails in Chrome; hidden here until it is fixed
     drillProvider: ({ level, parent, context }) => provide(level, parent.geoid, context),
