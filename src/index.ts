@@ -93,6 +93,7 @@ export { AnnotationStore } from './state/annotations'
 export type { AnnotationMarker, AnnotationShape, Bookmark, AnnotationState, AnnotationListener } from './state/annotations'
 
 // ─── Performance utilities (Bundle 11) ───────────────────────────────────────
+export { percentChange } from './data/change'
 export { rafThrottle, debounce } from './util/throttle'
 export { computeDistributionStats, computeManyDistributions } from './util/aggregate'
 export type { DistributionStats } from './util/aggregate'

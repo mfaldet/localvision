@@ -48,20 +48,24 @@ def fetch(url, path):
 
 
 def load(year, cache):
-    """One row per geography: GEO_ID plus the four estimates. Special codes become missing."""
+    """One row per geography: GEO_ID, the four estimates and their margins of error (90% confidence).
+    Special codes become missing, except a margin the Bureau marks as controlled, which is 0."""
     out = None
     for key, table in TABLES:
         path = fetch(f'{SRC[year][0]}/acsdt5y{year}-{table}.dat', f'{cache}/acsdt5y{year}-{table}.dat')
-        col = f'{table.upper()}_E001'
-        d = pd.read_csv(path, sep='|', dtype={'GEO_ID': str}, usecols=['GEO_ID', col]).rename(columns={col: key})
+        col, mcol = f'{table.upper()}_E001', f'{table.upper()}_M001'
+        d = pd.read_csv(path, sep='|', dtype={'GEO_ID': str}, usecols=['GEO_ID', col, mcol]).rename(columns={col: key, mcol: key + '_moe'})
         d = d[d.GEO_ID.str[:3].isin(LEVELS) & (d.GEO_ID.str[3:7] == '0000')]
         v = d[key].astype('float')
         v = v.where(v >= 0)                                   # negative codes mean "no estimate"
         if key in TOP:
             v = v.where((v < TOP[key]) & (v > BOTTOM[key]))   # open-ended medians cannot be shown as a number
+        m = d[key + '_moe'].astype('float')
+        m = m.where(m != -555555555, 0)                       # controlled to official estimates: no sampling margin
+        m = m.where((m >= 0) & v.notna())                     # other negative codes mean "no margin published"
         if key in DOLLARS and year == 2019:
-            v = (v * FACTOR).round()
-        d[key] = v
+            v, m = (v * FACTOR).round(), (m * FACTOR).round()
+        d[key], d[key + '_moe'] = v, m
         out = d if out is None else out.merge(d, on='GEO_ID', how='outer')
     return out.set_index('GEO_ID')
 
@@ -116,19 +120,23 @@ def main():
     geos = geos[geos.SUMLEVEL.isin(LEVELS) & (geos.COMPONENT == '00') & geos.STATE.notna()]
     geos = geos[geos.STATE.astype(int) <= 56]                 # 50 states and DC
     keys = [k for k, _ in TABLES]
+    cols = keys + [k + '_moe' for k in keys]   # estimates, then margins
+    newd, oldd = new[cols].to_dict('index'), old[cols].to_dict('index')
+    blank = dict.fromkeys(cols)
     written = 0
     for (sumlevel, state), g in geos.groupby(['SUMLEVEL', 'STATE']):
         level = LEVELS[sumlevel]
         rows = {}
         for gid in g.GEO_ID:
             short = gid.split('US')[1]
-            now = [num(new.at[gid, k]) if gid in new.index else None for k in keys]
+            n, o = newd.get(gid, blank), oldd.get(gid, blank)
             if level == 'tract':
-                rows[short] = now                              # tracts were redrawn in 2020: latest period only
+                rows[short] = [num(n[c]) for c in cols]        # tracts were redrawn in 2020: latest period only
             else:
-                before = [num(old.at[gid, k]) if gid in old.index else None for k in keys]
-                rows[short] = before + now
-        doc = {'periods': PERIODS[1:] if level == 'tract' else PERIODS, 'measures': keys, 'rows': rows}
+                # per period: the estimates, then the margins
+                rows[short] = [num(o[c]) for c in keys] + [num(n[c]) for c in keys] + [num(o[c + '_moe']) for c in keys] + [num(n[c + '_moe']) for c in keys]
+        doc = {'periods': PERIODS[1:] if level == 'tract' else PERIODS, 'measures': keys,
+               'layout': 'for each period the estimates in measure order, then for each period the margins of error in measure order', 'rows': rows}
         with open(f'{a.out}/{level}/{state}.json', 'w') as f:
             json.dump(doc, f, separators=(',', ':'))
         written += 1
@@ -152,7 +160,7 @@ def main():
                 json.dump(fc, f, separators=(',', ':'))
             print('metro', name, len(fc['features']))
     with open(f'{a.out}/about.json', 'w') as f:
-        json.dump({'periods': PERIODS, 'measures': keys, 'dollar_year': 2024, 'inflation_factor_2019_to_2024': round(FACTOR, 8),
+        json.dump({'periods': PERIODS, 'measures': keys, 'margins': '90% confidence, as published', 'dollar_year': 2024, 'inflation_factor_2019_to_2024': round(FACTOR, 8),
                    'tables': {k: t.upper() for k, t in TABLES}, 'built': time.strftime('%Y-%m-%d')}, f, indent=1)
     print('files written:', written, 'places in search list:', len(index))
 

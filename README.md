@@ -66,13 +66,17 @@ new LocalVisionApp({
 
 ## What works today
 
-This is an early project built by one person. The lists below come from running each feature in a browser in November 2026, not from the plan. The live demo hides the PNG export button and leaves out the OpenStreetMap layers because of the faults listed here.
+This is an early project built by one person. The lists below come from running each feature in a browser in November 2026, not from the plan. The live demo leaves out the OpenStreetMap layers because of the fault listed here.
 
 **Works**
 
 - US Census boundaries loaded from TIGERweb and cached: counties, places, county subdivisions, tracts and block groups
 - City search across US places. Give it a saved list with populations, as the demo does, and the largest place of a name comes first
-- Map and KPI panel linked one way: click an area on the map to see its figures; switch the measure to recolor the map
+- Map and charts linked both ways: select an area on the map and it is marked on every chart, with its figures above them; click a chart and the area nearest that value is selected on the map
+- Margins of error beside each figure, when the data supplies them
+- Change between two periods: the map is colored by the percentage change, and any place whose change is within its margin of error is shown in a neutral color as "no measurable change"
+- The map opens on the data, not on a default spot on the globe
+- PNG export of the whole view, including both maps in comparison mode
 - Drill-down from a county into its tracts, with breadcrumbs back
 - Time slider and animated playback, or a simple switch between a few periods
 - Display settings: color scheme (including color-blind-safe palettes), opacity, boundary color, pattern and width, and a clip area
@@ -80,24 +84,26 @@ This is an early project built by one person. The lists below come from running 
 - Light and dark themes, on background maps from OpenFreeMap that need no key
 - Shareable links that keep the city, view, level and period
 - Dashboard templates: equity, housing, economic, community
-- 78 unit tests, run with a type check on every pull request
+- 82 unit tests, run with a type check on every pull request
 
 **Works, with known faults**
 
 - ACS 5-year data binding needs your own Census API key. The Census API refuses requests without one, so the examples show no data until you add a key.
 - Without a saved search list, city search loads the list from the Census boundary service state by state. That is slow on first load, and matches are not ranked by size.
 - Boundaries for most places are fetched live from the Census boundary service. A large county can take ten seconds or more the first time, and nothing loads if that service is down.
-- Margins of error are not shown anywhere, although every survey figure has one.
+- Clicking a chart selects the single area nearest the click. Dragging to select a range is not built.
+- The change view needs margins of error and two comparable periods, so the demo offers it for counties and cities only, not tracts. With many places on one map, a few will pass the margin test by chance.
+- County population totals carry no margin of error, so the change view shows any difference in them as a change.
 - On a phone the page fits and can be used, but it is the desktop arrangement stacked into one column. It is not designed for phones.
-- PNG export fails in Chrome and downloads nothing. In comparison mode it saves only one of the two maps.
-- Side-by-side comparison opens two maps. There is no swipe or difference view.
+- PNG export has been checked in Chrome only. It can be slow on a view with thousands of areas, and the picture uses the device's own fonts.
+- Comparison mode opens two maps, stacked. There is no swipe view.
 - OpenStreetMap layers (parks, schools, transit stops, hospitals) depend on the public Overpass servers and were not confirmed working in the last check.
 - The Python / Jupyter wrapper installs and builds, but is not on PyPI and has not been checked inside a notebook.
 - Keyboard navigation works, but charts have no screen-reader labels.
 
 **Planned, not built**
 
-- Clicking or brushing a chart to filter the map
+- Brushing a range on a chart to filter the map
 - SVG and PDF export
 - A grid-of-years view and year-over-year change
 - A public call for adding your own map layers, and layer reordering

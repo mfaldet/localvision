@@ -9,6 +9,7 @@
   "median_household_income",
   "median_gross_rent"
  ],
+ "margins": "90% confidence, as published",
  "dollar_year": 2024,
  "inflation_factor_2019_to_2024": 1.23070782,
  "tables": {
@@ -17,5 +18,5 @@
   "median_household_income": "B19013",
   "median_gross_rent": "B25064"
  },
- "built": "2026-11-12"
+ "built": "2026-11-13"
 }
