@@ -1392,6 +1392,27 @@ export class OuterCityView {
     return Math.abs(v) > (c.margins?.[kpi] ?? 0)
   }
 
+  /**
+   * The periods a change is worked out from, for one area and KPI, as text:
+   * "2015–2019: 14 ±11 · 2020–2024: 96 ±63". Shown under "no measurable
+   * change" so the reader still sees the figures the verdict rests on.
+   */
+  private periodsText(id: string, def: KpiDefinition): string {
+    const axis = this.activeBinding?.table.timeAxis
+    if (!axis?.change) return ''
+    const parts: string[] = []
+    for (const t of axis.times) {
+      if (t === axis.change.time) continue
+      const row = this.activeBinding!.table.rows.find((r) => r.geoid === id && r.time === t)
+      const v = row?.values[def.id]
+      if (typeof v !== 'number') continue
+      const m = row?.margins?.[def.id]
+      const margin = typeof m === 'number' ? ` ${def.format === 'currency' ? `±$${m.toLocaleString()}` : `±${m.toLocaleString()}`}` : ''
+      parts.push(`${t}: ${formatKpiValue(v, def)}${margin}`)
+    }
+    return parts.join(' · ')
+  }
+
   /** Format a value for the current mode: a signed percentage in change mode. */
   private fmt(value: number, def: KpiDefinition): string {
     return this.isChangeTime() ? formatChange(value) : formatKpiValue(value, def)
@@ -1736,9 +1757,11 @@ export class OuterCityView {
             ? `<span class="lv-figure-margin" title="Margin of error at 90% confidence">${this.fmtMargin(selectedItem.m, def)}</span>`
             : ''
         const within = change && Math.abs(selectedItem.v) <= (selectedItem.m ?? 0)
-        figure.innerHTML =
-          `<span class="lv-figure-value">${this.fmt(selectedItem.v, def)}</span>${margin}` +
-          (within ? '<span class="lv-figure-tag">no measurable change</span>' : '')
+        // A change inside its margin of error is not a number worth leading
+        // with: say so, and show the two periods it came from instead.
+        figure.innerHTML = within
+          ? `<span class="lv-figure-verdict">No measurable change</span><span class="lv-figure-periods">${escapeHtml(this.periodsText(selectedItem.id, def))}</span>`
+          : `<span class="lv-figure-value">${this.fmt(selectedItem.v, def)}</span>${margin}`
       } else {
         figure.innerHTML = `<span class="lv-figure-none">${change ? 'Change cannot be worked out' : 'No estimate published'}</span>`
       }
@@ -1830,7 +1853,11 @@ export class OuterCityView {
       chartEl.style.cursor = 'pointer'
       chartEl.addEventListener('mousemove', (e) => {
         const d = nearest(e)
-        if (d) readout.innerHTML = `<b>${escapeHtml(d.label)}</b> · ${this.fmt(d.v, def)}${typeof d.m === 'number' ? ` ${this.fmtMargin(d.m, def)}` : ''}`
+        if (!d) return
+        const within = change && Math.abs(d.v) <= (d.m ?? 0)
+        readout.innerHTML = within
+          ? `<b>${escapeHtml(d.label)}</b> · no measurable change <span class="lv-readout-periods">(${escapeHtml(this.periodsText(d.id, def))})</span>`
+          : `<b>${escapeHtml(d.label)}</b> · ${this.fmt(d.v, def)}${typeof d.m === 'number' ? ` ${this.fmtMargin(d.m, def)}` : ''}`
       })
       chartEl.addEventListener('mouseleave', () => { readout.textContent = idle })
       chartEl.addEventListener('click', (e) => {
@@ -1862,10 +1889,16 @@ export class OuterCityView {
     const hasMargin = typeof margin === 'number'
     const within = this.isChangeTime() && hasVal && Math.abs(Number(val)) <= (hasMargin ? margin : 0)
 
+    const id = String(props['_lv_id'] ?? '')
+    const valueHtml = !hasVal
+      ? '—'
+      : within
+        ? '<b>No measurable change</b>'
+        : `${this.fmt(Number(val), kpiDef!)}${hasMargin ? ` <small>${this.fmtMargin(margin, kpiDef!)}</small>` : ''}`
     el.innerHTML = `
       <div class="lv-tooltip-label">${escapeHtml(label)}</div>
-      ${kpiDef ? `<div class="lv-tooltip-row"><span>${kpiDef.label}${this.isChangeTime() ? ': change' : ''}</span><span>${hasVal ? this.fmt(Number(val), kpiDef) : '—'}${hasVal && hasMargin ? ` <small>${this.fmtMargin(margin, kpiDef)}</small>` : ''}</span></div>` : ''}
-      ${within ? '<div class="lv-tooltip-note">No measurable change</div>' : ''}
+      ${kpiDef ? `<div class="lv-tooltip-row"><span>${kpiDef.label}${this.isChangeTime() ? ': change' : ''}</span><span>${valueHtml}</span></div>` : ''}
+      ${within && kpiDef ? `<div class="lv-tooltip-note">${escapeHtml(this.periodsText(id, kpiDef))}</div>` : ''}
     `
 
     const x = Math.min(point.x + 12, this.mapEl.clientWidth - 240)

@@ -1629,3 +1629,13 @@
   .lv-pin { width: 88%; }
   .lv-pin-open > .lv-pin-tab { left: 88%; }
 }
+
+/* A change within its margin of error: words first, the periods beneath */
+
+.lv-figure-verdict { flex: 1 1 100%; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--lv-color-text); }
+
+.lv-figure-periods { flex: 1 1 100%; font-size: 12px; color: var(--lv-color-text-muted); }
+
+.lv-readout-periods { opacity: 0.85; }
+
+.lv-pin-table td.lv-pin-verdict b { font-size: 12px; line-height: 1.25; color: var(--lv-color-text-muted); }

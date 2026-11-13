@@ -1708,7 +1708,10 @@ export class LocalVisionApp {
               ? `±$${c.margin.toLocaleString()}`
               : `±${c.margin.toLocaleString()}`
       const within = isChange && Math.abs(c.value) <= (c.margin ?? 0)
-      return `<td><b>${value}</b>${margin ? `<small>${margin}</small>` : ''}${within ? '<small class="lv-pin-within">no measurable change</small>' : ''}</td>`
+      // Inside its margin of error the percentage is not shown; the two
+      // periods it came from are in the columns beside it.
+      if (within) return '<td class="lv-pin-verdict"><b>No measurable change</b></td>'
+      return `<td><b>${value}</b>${margin ? `<small>${margin}</small>` : ''}</td>`
     }
     const heads = pin.times.length ? pin.times : ['']
     this.pinEl.innerHTML = `
