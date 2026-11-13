@@ -706,8 +706,8 @@ export class LocalVisionApp {
     this.cityToggleContainerEl.innerHTML = ''
 
     const modes: { id: ViewMode; label: string }[] = [
-      { id: 'inner', label: 'Inner City' },
-      { id: 'outer', label: 'Outer City' },
+      { id: 'inner', label: this.options.viewLabels?.inner ?? 'Inner City' },
+      { id: 'outer', label: this.options.viewLabels?.outer ?? 'Outer City' },
     ]
 
     for (const { id, label } of modes) {
@@ -722,7 +722,9 @@ export class LocalVisionApp {
         btn.addEventListener('click', () => this.switchTo(id))
       } else {
         btn.className = 'lv-view-toggle-btn lv-view-toggle-load'
-        btn.textContent = `+ ${label}`
+        // With custom labels the button reads as a plain choice; the dashed
+        // outline still marks a view that has not been opened yet.
+        btn.textContent = this.options.viewLabels ? label : `+ ${label}`
         btn.title = `Load ${label} data`
         btn.addEventListener('click', () => this.loadView(id))
       }
