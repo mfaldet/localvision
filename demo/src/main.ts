@@ -143,12 +143,12 @@ function mount(): void {
     theme: light ? LIGHT_THEME : DEFAULT_THEME,
     defaultView: 'inner',
     defaultInnerBoundary: 'tract',
-    defaultOuterBoundary: 'county',
-    levels: { inner: ['tract', 'place'], outer: ['county', 'place'] },
+    defaultOuterBoundary: 'place', // "Between cities" opens on cities; counties are the second choice
+    levels: { inner: ['tract', 'place'], outer: ['place', 'county'] },
     placesIndex: loadPlaces,
     boundaryLoader: loader,
     initialCity: METRO_ID,
-    viewLabels: { inner: 'Close up', outer: 'Wider area' },
+    viewLabels: { inner: 'Within city', outer: 'Between cities' },
     timeControl: 'switch',
     hideExport: true, // PNG export fails in Chrome; hidden here until it is fixed
     drillProvider: ({ level, parent, context }) => provide(level, parent.geoid, context),
