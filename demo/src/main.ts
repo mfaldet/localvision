@@ -19,6 +19,8 @@ import { bboxCenter, findFeatureContaining } from '../../src/geo/spatial'
 type Level = 'county' | 'place' | 'tract'
 /** For each area: the estimates for each period in measure order, then the margins of error the same way. */
 interface SavedData { periods: string[]; measures: string[]; rows: Record<string, (number | null)[]> }
+type ScaleSet = Record<string, { breaks: number[]; changeBreaks?: number[] }>
+const LEVEL_WORDS: Record<Level, string> = { county: 'counties', place: 'cities and towns', tract: 'census tracts' }
 const CHANGE = 'Change'
 const COUNTY_CHANGE_NOTES = {
   population:
@@ -113,7 +115,7 @@ function changeBetween(measures: string[], v: (number | null)[], n: number): Pic
   return { values, margins }
 }
 
-function tableFor(level: Level, saved: SavedData, boundaries: GeoJsonFeatureCollection): DataTable {
+function tableFor(level: Level, saved: SavedData, boundaries: GeoJsonFeatureCollection, scales: ScaleSet | null): DataTable {
   const n = saved.measures.length
   const rows: DataRow[] = []
   for (const f of boundaries.features) {
@@ -137,7 +139,11 @@ function tableFor(level: Level, saved: SavedData, boundaries: GeoJsonFeatureColl
   return {
     variables: MEASURES.map((m) => ({ ...m })),
     rows,
-    meta: { source: 'U.S. Census Bureau, American Community Survey 5-year estimates', geographyLevel: level },
+    meta: {
+      source: 'U.S. Census Bureau, American Community Survey 5-year estimates',
+      geographyLevel: level,
+      ...(scales ? { fixedScale: { label: 'All US', description: `Colors follow all US ${LEVEL_WORDS[level]}: each step is 5% of them, so a color means the same in every place you look at.`, scales } } : {}),
+    },
     timeAxis: {
       // The change comes last, so levels that have it open on it
       times: comparable ? [...saved.periods, CHANGE] : saved.periods,
@@ -151,11 +157,13 @@ async function provide(level: string, parentGeoid: string, context: { stateFips?
   if (level !== 'county' && level !== 'place' && level !== 'tract') return null
   const stateFips = context.stateFips ?? '27'
   const isMetro = parentGeoid === METRO_ID
-  const [boundaries, saved] = await Promise.all([
+  const [boundaries, saved, scales] = await Promise.all([
     boundariesFor(level, stateFips, context.countyFips, isMetro),
     getJson<SavedData>(`${level}/${stateFips}.json`),
+    // the national scale is a nicety: without it the map still works, fitted to the view
+    getJson<{ levels: Record<Level, ScaleSet> }>('scales.json').then((s) => s.levels[level], () => null),
   ])
-  return bindDataToBoundaries(boundaries, tableFor(level, saved, boundaries))
+  return bindDataToBoundaries(boundaries, tableFor(level, saved, boundaries, scales))
 }
 
 // ── the app, rebuilt when the theme changes ──────────────────────────────────
@@ -180,6 +188,7 @@ function mount(): void {
     initialCity: METRO_ID,
     viewLabels: { inner: 'Within city', outer: 'Between cities' },
     timeControl: 'switch',
+    pinning: true,
     drillProvider: ({ level, parent, context }) => provide(level, parent.geoid, context),
     outer: { activeKpi: 'households' },
   })

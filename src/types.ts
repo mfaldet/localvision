@@ -159,6 +159,10 @@ export interface OuterCityOptions {
    * Default: "Drill into [community label]".
    */
   drillButtonLabel?: string
+  /** When set, a selected area gets a "Pin" button that hands it to this callback. */
+  onPinRequest?: (community: { id: string; label: string }) => void
+  /** Called when the visitor changes a style setting from inside the view (the color-scale switch). */
+  onStyleChange?: (change: Partial<import('./views/OuterCityView').ChoroplethStyleConfig>) => void
 }
 
 // ─── Combined app ─────────────────────────────────────────────────────────────
@@ -229,6 +233,12 @@ export interface LocalVisionAppOptions {
   levels?: { inner?: InnerLevel[]; outer?: OuterLevel[] }
   /** Replace the names of the two views (defaults: "Inner City", "Outer City"). */
   viewLabels?: { inner?: string; outer?: string }
+  /**
+   * Let the visitor pin a selected area: its figures stay in a tab that
+   * slides out over the left of the map, so they can be read beside the
+   * figures of whatever place is looked at next.
+   */
+  pinning?: boolean
   /** Hide the PNG export button. */
   hideExport?: boolean
   /**

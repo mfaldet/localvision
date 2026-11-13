@@ -67,6 +67,12 @@ export interface ChoroplethStyleConfig {
   lineWidth: number
   /** Dash pattern for the boundary lines. Default 'solid'. */
   linePattern: LinePatternName
+  /**
+   * 'view' fits the colors to the areas on screen. 'fixed' uses the
+   * binding's fixed scale when it has one, so colors are comparable from
+   * one place to the next.
+   */
+  scaleMode: 'view' | 'fixed'
 }
 
 const DEFAULT_STYLE_CONFIG: ChoroplethStyleConfig = {
@@ -75,6 +81,7 @@ const DEFAULT_STYLE_CONFIG: ChoroplethStyleConfig = {
   lineColor: 'auto',
   lineWidth: 1,
   linePattern: 'solid',
+  scaleMode: 'view',
 }
 /** Suffix of the feature property that carries a KPI's margin of error. */
 const MARGIN_SUFFIX = '__moe'
@@ -103,6 +110,8 @@ export class OuterCityView {
   private unsubscribeSelection: () => void = () => {}
   private communityFids = new Map<string, number[]>()
   private onDrillRequest?: (c: { id: string; label: string; properties: Record<string, unknown> }) => void
+  private onPinRequest?: (c: { id: string; label: string }) => void
+  private onStyleChange?: (change: Partial<ChoroplethStyleConfig>) => void
   private activeBinding: DataBinding | null = null
   private currentTime: string | number | null = null
   /** Latest time asked for. The map applies it a frame later, so compare requests against this, not currentTime. */
@@ -136,6 +145,8 @@ export class OuterCityView {
     this.splitRatio = options.splitRatio ?? 0.5
     this.selection = options.selection ?? new SelectionStore()
     this.onDrillRequest = options.onDrillRequest
+    this.onPinRequest = options.onPinRequest
+    this.onStyleChange = options.onStyleChange
     this.drillButtonLabel = options.drillButtonLabel
 
     // Source of truth: a DataBinding (preferred) or hand-built communities.
@@ -1186,6 +1197,7 @@ export class OuterCityView {
     if (this.map.getLayer(CHOROPLETH_FILL)) {
       this.map.setPaintProperty(CHOROPLETH_FILL, 'fill-color', this.buildColorExpression())
       this.map.setPaintProperty(CHOROPLETH_FILL, 'fill-opacity', this.fillOpacityExpression())
+      this.renderLegend() // the scheme and the scale mode both show in it
     }
     if (this.map.getLayer(CHOROPLETH_LINE)) {
       this.map.setPaintProperty(CHOROPLETH_LINE, 'line-color', this.resolveLineColor())
@@ -1328,7 +1340,19 @@ export class OuterCityView {
       COLOR_SCHEMES[this.styleConfig.scheme] ??
       COLOR_SCHEMES.default
     if (this.isChangeTime()) return this.buildChangeColorExpression()
-    const values = this.communities.map((c) => c.kpis[this.activeKpi] ?? 0)
+    const fixed = this.fixedBreaks()
+    if (fixed) {
+      // The palette is spread evenly over the breaks, not over the values:
+      // each break gets the next color step, and values between two breaks
+      // blend between their colors.
+      const stops: (string | number)[] = []
+      fixed.forEach((value, i) => stops.push(value, samplePalette(palette, i / (fixed.length - 1))))
+      return unshadedWhenMissing(this.activeKpi, ['interpolate', ['linear'], ['get', this.activeKpi], ...stops])
+    }
+    const values = this.communities
+      .map((c) => c.kpis[this.activeKpi])
+      .filter((v): v is number => typeof v === 'number')
+    if (values.length === 0) return ['literal', 'rgba(0,0,0,0)'] as unknown as maplibregl.ExpressionSpecification
     const min = Math.min(...values)
     const max = Math.max(...values)
 
@@ -1342,12 +1366,7 @@ export class OuterCityView {
       stops.push(min + i * stepSize, color)
     })
 
-    return [
-      'interpolate',
-      ['linear'],
-      ['get', this.activeKpi],
-      ...stops,
-    ] as unknown as maplibregl.ExpressionSpecification
+    return unshadedWhenMissing(this.activeKpi, ['interpolate', ['linear'], ['get', this.activeKpi], ...stops])
   }
 
   private updateChoropleth(): void {
@@ -1391,6 +1410,20 @@ export class OuterCityView {
    */
   private buildChangeColorExpression(): maplibregl.ExpressionSpecification {
     const k = this.activeKpi
+    const steps = this.fixedChangeBreaks()
+    if (steps) {
+      // Same idea for change: one color step per break, mirrored around zero
+      const n = steps.length
+      const stops: (string | number)[] = []
+      for (let i = n - 1; i >= 0; i--) stops.push(-steps[i], mix(CHANGE_COLORS.down[1], CHANGE_COLORS.down[0], (i + 1) / n))
+      for (let i = 0; i < n; i++) stops.push(steps[i], mix(CHANGE_COLORS.up[0], CHANGE_COLORS.up[1], (i + 1) / n))
+      return [
+        'case',
+        ['!', ['has', k]], 'rgba(0,0,0,0)',
+        ['<=', ['abs', ['get', k]], ['coalesce', ['get', `${k}${MARGIN_SUFFIX}`], 0]], CHANGE_COLORS.neutral,
+        ['interpolate', ['linear'], ['get', k], ...stops],
+      ] as unknown as maplibregl.ExpressionSpecification
+    }
     const cap = this.changeCap()
     return [
       'case',
@@ -1412,9 +1445,30 @@ export class OuterCityView {
     return Math.max(1, sizes.length ? sizes[Math.floor((sizes.length - 1) * 0.9)] : 1)
   }
 
-  /** Map legend. Shown in change mode, where the colors need explaining. */
+  /** The binding's fixed scale for the active KPI, if the visitor has chosen it. */
+  private fixedScaleEntry(): { breaks: number[]; changeBreaks?: number[] } | null {
+    if (this.styleConfig.scaleMode !== 'fixed') return null
+    return this.activeBinding?.table.meta?.fixedScale?.scales[this.activeKpi] ?? null
+  }
+
+  /** Strictly ascending fixed breaks (repeats dropped), or null. */
+  private fixedBreaks(): number[] | null {
+    const out = ascending(this.fixedScaleEntry()?.breaks ?? [])
+    return out.length >= 2 ? out : null
+  }
+
+  private fixedChangeBreaks(): number[] | null {
+    const out = ascending((this.fixedScaleEntry()?.changeBreaks ?? []).filter((v) => v > 0))
+    return out.length >= 1 ? out : null
+  }
+
+  /**
+   * Map legend: what the colors mean, and the switch between colors fitted
+   * to this view and the binding's fixed scale (when it has one).
+   */
   private renderLegend(): void {
-    if (!this.isChangeTime()) {
+    const def = this.kpiDefs.get(this.activeKpi)
+    if (!def || this.communities.length === 0) {
       this.legendEl?.remove()
       this.legendEl = null
       return
@@ -1424,19 +1478,63 @@ export class OuterCityView {
       this.legendEl.className = 'lv-legend'
       this.mapEl.appendChild(this.legendEl)
     }
-    const def = this.kpiDefs.get(this.activeKpi)
-    const top = this.changeCap()
-    const cap = `${top.toFixed(top < 10 ? 1 : 0)}%`
-    const grad = (a: string, b: string) => `background:linear-gradient(90deg, ${a}, ${b})`
-    const caution = this.activeBinding?.table.timeAxis?.change?.notes?.[this.activeKpi]
-    this.legendEl.innerHTML = `
-      <div class="lv-legend-title">${def?.label ?? ''}: change</div>
-      <div class="lv-legend-row"><i style="${grad(CHANGE_COLORS.up[0], CHANGE_COLORS.up[1])}"></i>Increase, up to +${cap} or more</div>
-      <div class="lv-legend-row"><i style="background:${CHANGE_COLORS.neutral}"></i>No measurable change</div>
-      <div class="lv-legend-row"><i style="${grad(CHANGE_COLORS.down[1], CHANGE_COLORS.down[0])}"></i>Decrease, down to −${cap} or more</div>
-      <div class="lv-legend-note">"No measurable change" means the change is within the survey's margin of error. Unshaded areas have no estimate.</div>
-      ${caution ? `<div class="lv-legend-caution" role="note">${escapeHtml(caution)}</div>` : ''}
-    `
+    const change = this.isChangeTime()
+    const fixedMeta = this.activeBinding?.table.meta?.fixedScale
+    const offered = !!fixedMeta?.scales[this.activeKpi] && (!change || !!fixedMeta.scales[this.activeKpi].changeBreaks)
+    const usingFixed = change ? !!this.fixedChangeBreaks() : !!this.fixedBreaks()
+    const grad = (colors: string[]) => `background:linear-gradient(90deg, ${colors.join(', ')})`
+    let body: string
+
+    if (change) {
+      const steps = this.fixedChangeBreaks()
+      const top = steps ? steps[steps.length - 1] : this.changeCap()
+      const cap = `${top.toFixed(top < 10 ? 1 : 0)}%`
+      const caution = this.activeBinding?.table.timeAxis?.change?.notes?.[this.activeKpi]
+      body = `
+        <div class="lv-legend-title">${def.label}: change</div>
+        <div class="lv-legend-row"><i style="${grad([CHANGE_COLORS.up[0], CHANGE_COLORS.up[1]])}"></i>Increase, up to +${cap} or more</div>
+        <div class="lv-legend-row"><i style="background:${CHANGE_COLORS.neutral}"></i>No measurable change</div>
+        <div class="lv-legend-row"><i style="${grad([CHANGE_COLORS.down[1], CHANGE_COLORS.down[0]])}"></i>Decrease, down to −${cap} or more</div>
+        <div class="lv-legend-note">"No measurable change" means the change is within the survey's margin of error. Unshaded areas have no estimate.</div>
+        ${caution ? `<div class="lv-legend-caution" role="note">${escapeHtml(caution)}</div>` : ''}
+      `
+    } else {
+      const palette = def.colorScale ?? COLOR_SCHEMES[this.styleConfig.scheme] ?? COLOR_SCHEMES.default
+      const breaks = this.fixedBreaks()
+      const values = this.communities.map((c) => c.kpis[this.activeKpi]).filter((v): v is number => typeof v === 'number')
+      // Fixed: label a low, middle and high break. View: the range on screen.
+      const marks = breaks
+        ? [breaks[Math.round((breaks.length - 1) * 0.05)], breaks[Math.round((breaks.length - 1) * 0.5)], breaks[Math.round((breaks.length - 1) * 0.95)]]
+        : values.length
+          ? [Math.min(...values), (Math.min(...values) + Math.max(...values)) / 2, Math.max(...values)]
+          : []
+      body = `
+        <div class="lv-legend-title">${def.label}</div>
+        <div class="lv-legend-bar" style="${grad(palette)}"></div>
+        <div class="lv-legend-ticks">${marks.map((v) => `<span>${formatKpiValue(Math.round(v), def)}</span>`).join('')}</div>
+      `
+    }
+
+    const note = usingFixed
+      ? (fixedMeta?.description ?? `Colors mean the same everywhere (${fixedMeta?.label}).`)
+      : 'Colors are fitted to the areas on screen, so they are not comparable with another place.'
+    const toggle = offered
+      ? `
+        <div class="lv-legend-scale" role="group" aria-label="Color scale">
+          <button type="button" data-scale="view" aria-pressed="${!usingFixed}" class="${usingFixed ? '' : 'lv-active'}">This view</button>
+          <button type="button" data-scale="fixed" aria-pressed="${usingFixed}" class="${usingFixed ? 'lv-active' : ''}">${escapeHtml(fixedMeta!.label)}</button>
+        </div>
+        <div class="lv-legend-note">${escapeHtml(note)}</div>`
+      : ''
+    this.legendEl.innerHTML = body + toggle
+    this.legendEl.querySelectorAll<HTMLButtonElement>('[data-scale]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const scaleMode = btn.dataset['scale'] as 'view' | 'fixed'
+        if (scaleMode === this.styleConfig.scaleMode) return
+        this.setStyle({ scaleMode })
+        this.onStyleChange?.({ scaleMode })
+      })
+    })
   }
 
   /** Bounding box of every area, or null when there is none. */
@@ -1517,6 +1615,16 @@ export class OuterCityView {
     backBtn.textContent = '← Clear selection'
     backBtn.addEventListener('click', () => this.selection.clear())
     btnRow.appendChild(backBtn)
+
+    if (this.onPinRequest) {
+      const pinBtn = document.createElement('button')
+      pinBtn.className = 'lv-pin-btn'
+      pinBtn.style.cssText = `background:none;border:1px solid ${this.theme.colorBorder};color:${this.theme.colorText};padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;`
+      pinBtn.textContent = 'Pin to compare'
+      pinBtn.title = 'Keep these figures in a side tab while you look at another place'
+      pinBtn.addEventListener('click', () => this.onPinRequest?.({ id: community.id, label: community.label }))
+      btnRow.appendChild(pinBtn)
+    }
 
     // Drill-down button — only shown when a callback is provided
     if (this.onDrillRequest) {
@@ -1819,8 +1927,40 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] ?? ch)
 }
 
+/** An area with no value for the KPI is left unshaded, not given the lowest color. */
+function unshadedWhenMissing(kpi: string, colors: unknown[]): maplibregl.ExpressionSpecification {
+  return ['case', ['!', ['has', kpi]], 'rgba(0,0,0,0)', colors] as unknown as maplibregl.ExpressionSpecification
+}
+
+/** Keep only values larger than the one before, so they can serve as scale stops. */
+export function ascending(values: number[]): number[] {
+  const out: number[] = []
+  for (const v of values) if (out.length === 0 || v > out[out.length - 1]) out.push(v)
+  return out
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16)) as [number, number, number]
+}
+
+/** Blend two hex colors; t = 0 gives the first, 1 the second. */
+function mix(a: string, b: string, t: number): string {
+  const x = hexToRgb(a)
+  const y = hexToRgb(b)
+  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(',')})`
+}
+
+/** The color at position t (0..1) along a palette of evenly spaced colors. */
+export function samplePalette(palette: string[], t: number): string {
+  const pos = Math.min(Math.max(t, 0), 1) * (palette.length - 1)
+  const i = Math.min(Math.floor(pos), palette.length - 2)
+  return mix(palette[i], palette[i + 1], pos - i)
+}
+
 /** A percentage change with an explicit sign, e.g. "+8.9%" or "−3.1%". */
-function formatChange(value: number): string {
+export function formatChange(value: number): string {
   const sign = value > 0 ? '+' : value < 0 ? '−' : ''
   return `${sign}${Math.abs(value).toFixed(1)}%`
 }
@@ -1831,7 +1971,7 @@ function marginProps(margins?: Record<string, number>): Record<string, number> {
   return out
 }
 
-function formatKpiValue(value: number, def: KpiDefinition): string {
+export function formatKpiValue(value: number, def: Pick<KpiDefinition, 'format' | 'unit'>): string {
   switch (def.format) {
     case 'percent': return `${(value * 100).toFixed(1)}%`
     case 'currency': return `$${value.toLocaleString()}`

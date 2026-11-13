@@ -28,7 +28,7 @@ import { AnnotationStore, type AnnotationState } from '../state/annotations'
 import type { DataBinding } from '../data/types'
 import { resolveTheme, applyThemeToDom } from '../theme/tokens'
 import { InnerCityView } from './InnerCityView'
-import { OuterCityView, type ChoroplethStyleConfig } from './OuterCityView'
+import { OuterCityView, formatKpiValue, formatChange, type ChoroplethStyleConfig } from './OuterCityView'
 
 import '../theme/styles.css'
 
@@ -47,6 +47,28 @@ const OUTER_LEVELS: OuterLevel[] = ['county', 'place', 'cousub']
 const INNER_LEVELS: InnerLevel[] = ['tract', 'bg', 'place', 'cousub']
 
 // ─── LocalVisionApp ───────────────────────────────────────────────────────────
+
+/** Every [lng, lat] of a polygon or multipolygon outline. */
+function collectLngLats(geometry: GeoJsonFeature['geometry']): number[][] {
+  if (geometry.type === 'Polygon') return (geometry.coordinates as number[][][]).flat()
+  if (geometry.type === 'MultiPolygon') return (geometry.coordinates as number[][][][]).flat(2)
+  return []
+}
+
+/** An area's figures, copied out so they outlive the view they came from. */
+interface PinnedArea {
+  label: string
+  /** Where it was pinned from, e.g. "Twin Cities metro, MN Places / CDPs" */
+  context: string
+  times: string[]
+  changeTime: string | null
+  rows: {
+    label: string
+    format: import('../types').KpiFormat
+    unit?: string
+    cells: ({ value: number; margin: number | null } | null)[]
+  }[]
+}
 
 export class LocalVisionApp {
   private root: HTMLElement
@@ -88,6 +110,9 @@ export class LocalVisionApp {
   private timeBarEl: HTMLElement
   private timePlayBtn: HTMLButtonElement
   private timeSwitchEl!: HTMLDivElement
+  private pinEl!: HTMLDivElement
+  private pinTabEl!: HTMLButtonElement
+  private pinned: PinnedArea | null = null
   private timeSliderEl: HTMLInputElement
   private timeLabelEl: HTMLElement
   private loadingOverlayEl: HTMLElement
@@ -373,6 +398,24 @@ export class LocalVisionApp {
       const estimate = this.loadingTarget ? this.estimateTime(this.loadingTarget.level) : null
       this.updateLoadingOverlay(state.loading, label, estimate)
     })
+
+    // Pinned-area tab: slides out over the left of the body (the map side)
+    this.pinEl = document.createElement('div')
+    this.pinEl.className = 'lv-pin'
+    this.pinEl.setAttribute('role', 'complementary')
+    this.pinEl.setAttribute('aria-label', 'Pinned place')
+    this.pinTabEl = document.createElement('button')
+    this.pinTabEl.type = 'button'
+    this.pinTabEl.className = 'lv-pin-tab'
+    this.pinTabEl.addEventListener('click', () => this.setPinOpen(!this.bodyEl.classList.contains('lv-pin-open')))
+    this.bodyEl.appendChild(this.pinEl)
+    this.bodyEl.appendChild(this.pinTabEl)
+    if (this.options.pinning) {
+      this.pinned = this.loadPinned()
+      this.renderPin()
+    } else {
+      this.pinTabEl.style.display = 'none'
+    }
 
     // Empty-state placeholder for the body — shown until a city is picked.
     this.emptyStateEl = document.createElement('div')
@@ -991,12 +1034,28 @@ export class LocalVisionApp {
     if (!cityFeature) return null
     try {
       const counties = await this.geoLoader.counties(stateFips)
-      const center = bboxCenter(cityFeature.geometry)
-      const containing = findFeatureContaining(
-        center,
-        counties.features as unknown as GeoJsonFeature[],
-      )
-      const countyFips = containing?.properties?.['COUNTY']
+      const countyFeatures = counties.features as unknown as GeoJsonFeature[]
+      // The middle of a city's bounding box can fall outside the city, and
+      // even in a neighboring county, when the city has an odd shape (Denver
+      // with its airport, for one). So sample points across the box, keep
+      // those inside the city, and take the county holding the most of them.
+      const coords = collectLngLats(cityFeature.geometry)
+      const xs = coords.map((c) => c[0])
+      const ys = coords.map((c) => c[1])
+      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
+      const votes = new Map<string, number>()
+      const N = 14
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          const pt: [number, number] = [x0 + ((i + 0.5) / N) * (x1 - x0), y0 + ((j + 0.5) / N) * (y1 - y0)]
+          if (!findFeatureContaining(pt, [cityFeature])) continue
+          const fips = findFeatureContaining(pt, countyFeatures)?.properties?.['COUNTY']
+          if (typeof fips === 'string') votes.set(fips, (votes.get(fips) ?? 0) + 1)
+        }
+      }
+      if (votes.size > 0) return [...votes.entries()].sort((a, b) => b[1] - a[1])[0][0]
+      // A city too small for any sample point to land in: fall back to its middle
+      const countyFips = findFeatureContaining(bboxCenter(cityFeature.geometry), countyFeatures)?.properties?.['COUNTY']
       return typeof countyFips === 'string' ? countyFips : null
     } catch (err) {
       console.warn('[LocalVision] Could not resolve containing county:', err)
@@ -1178,6 +1237,8 @@ export class LocalVisionApp {
         onDrillRequest: this.options.drillProvider
           ? (c) => this.drillInto(c.id, c.label, c.properties)
           : undefined,
+        onPinRequest: this.options.pinning ? (c) => this.pinArea(c.id, c.label) : undefined,
+        onStyleChange: (change) => this.onViewStyleChange(change),
       })
       // Pick + apply a different starting KPI for the right map so the
       // comparison is visually meaningful from frame one.
@@ -1225,6 +1286,8 @@ export class LocalVisionApp {
         onDrillRequest: this.options.drillProvider
           ? (c) => this.drillInto(c.id, c.label, c.properties)
           : undefined,
+        onPinRequest: this.options.pinning ? (c) => this.pinArea(c.id, c.label) : undefined,
+        onStyleChange: (change) => this.onViewStyleChange(change),
       })
       const t = this.time.currentValue()
       if (t != null) this.outerView.setCurrentTime(t)
@@ -1545,6 +1608,126 @@ export class LocalVisionApp {
   private applyAndPersistStyle(partial: Partial<ChoroplethStyleConfig>): void {
     this.outerView?.setStyle(partial)
     this.persistStyle(partial)
+  }
+
+  /** The color-scale switch lives inside the view; keep both maps and storage in step with it. */
+  private onViewStyleChange(change: Partial<ChoroplethStyleConfig>): void {
+    this.outerView?.setStyle(change)
+    this.outerViewCompare?.setStyle(change)
+    this.persistStyle(change)
+  }
+
+  // ── Pinned area ─────────────────────────────────────────────────────────────
+
+  private static PIN_STORAGE_KEY = 'lv_pin_v1'
+
+  private loadPinned(): PinnedArea | null {
+    try {
+      const raw = window.localStorage?.getItem(LocalVisionApp.PIN_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as PinnedArea) : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Keep an area's figures, for every period, in the side tab. The figures
+   * are copied out of the current data, so they stay readable after the
+   * visitor moves to another level, view or city.
+   */
+  private pinArea(id: string, label: string): void {
+    const entry = this.drilldown.getSnapshot().current
+    if (!entry) return
+    const table = entry.binding.table
+    const times = table.timeAxis?.times ?? []
+    const mine = table.rows.filter((r) => r.geoid === id)
+    const feature = entry.binding.boundaries.features.find((f) => String(f.properties?.['_lv_geoid'] ?? '') === id)
+    this.pinned = {
+      label,
+      context: entry.level.label,
+      times: times.map(String),
+      changeTime: table.timeAxis?.change ? String(table.timeAxis.change.time) : null,
+      rows: table.variables.map((v) => ({
+        label: v.label,
+        format: v.format,
+        unit: v.unit,
+        cells: times.length
+          ? times.map((t) => {
+              const row = mine.find((r) => r.time === t)
+              const value = row?.values[v.key]
+              return typeof value === 'number' ? { value, margin: row?.margins?.[v.key] ?? null } : null
+            })
+          : [typeof feature?.properties?.[v.key] === 'number' ? { value: feature.properties[v.key] as number, margin: null } : null],
+      })),
+    }
+    try {
+      window.localStorage?.setItem(LocalVisionApp.PIN_STORAGE_KEY, JSON.stringify(this.pinned))
+    } catch {
+      /* storage unavailable: the pin lasts for this visit only */
+    }
+    this.renderPin()
+    this.setPinOpen(true)
+  }
+
+  private unpin(): void {
+    this.pinned = null
+    try {
+      window.localStorage?.removeItem(LocalVisionApp.PIN_STORAGE_KEY)
+    } catch {
+      /* nothing to remove */
+    }
+    this.renderPin()
+    this.setPinOpen(false)
+  }
+
+  private setPinOpen(open: boolean): void {
+    this.bodyEl.classList.toggle('lv-pin-open', open && !!this.pinned)
+    this.pinTabEl.setAttribute('aria-expanded', String(open && !!this.pinned))
+    this.pinTabEl.textContent = this.pinned ? `${open ? '◂' : '▸'} Pinned: ${this.pinned.label}` : ''
+  }
+
+  private renderPin(): void {
+    const pin = this.pinned
+    this.pinTabEl.style.display = pin ? '' : 'none'
+    this.pinEl.innerHTML = ''
+    if (!pin) return
+    this.setPinOpen(this.bodyEl.classList.contains('lv-pin-open'))
+
+    const esc = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] ?? ch)
+    const cell = (row: PinnedArea['rows'][number], i: number): string => {
+      const c = row.cells[i]
+      if (!c) return '<td class="lv-pin-none">—</td>'
+      const isChange = pin.changeTime !== null && pin.times[i] === pin.changeTime
+      const value = isChange ? formatChange(c.value) : formatKpiValue(c.value, row)
+      const margin =
+        c.margin === null
+          ? ''
+          : isChange
+            ? `±${c.margin.toFixed(1)} pts`
+            : row.format === 'currency'
+              ? `±$${c.margin.toLocaleString()}`
+              : `±${c.margin.toLocaleString()}`
+      const within = isChange && Math.abs(c.value) <= (c.margin ?? 0)
+      return `<td><b>${value}</b>${margin ? `<small>${margin}</small>` : ''}${within ? '<small class="lv-pin-within">no measurable change</small>' : ''}</td>`
+    }
+    const heads = pin.times.length ? pin.times : ['']
+    this.pinEl.innerHTML = `
+      <div class="lv-pin-head">
+        <div>
+          <p class="lv-pin-title">${esc(pin.label)}</p>
+          <p class="lv-pin-context">Pinned from ${esc(pin.context)}</p>
+        </div>
+        <button type="button" class="lv-pin-remove">Unpin</button>
+      </div>
+      <table class="lv-pin-table">
+        <thead><tr><th></th>${heads.map((t) => `<th>${esc(t)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${pin.rows.map((row) => `<tr><th scope="row">${esc(row.label)}</th>${heads.map((_, i) => cell(row, i)).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+      <p class="lv-pin-foot">± is the margin of error. These figures stay here while you look at another place.</p>
+    `
+    this.pinEl.querySelector('.lv-pin-remove')?.addEventListener('click', () => this.unpin())
   }
 
   // ── Annotation persistence ──────────────────────────────────────────────────
