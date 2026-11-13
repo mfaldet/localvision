@@ -1,6 +1,6 @@
 # LocalVision
 
-**[Try the live demo →](https://mfaldet.github.io/localvision/)** Nothing to install. It works on a phone.
+**[Try the live demo →](https://mfaldet.github.io/localvision/)** Nothing to install. Best on a computer screen.
 
 [![The LocalVision demo: a map of the seven Twin Cities counties shaded by number of households, beside charts of population, income and rent.](docs/public/demo-screenshot.jpg)](https://mfaldet.github.io/localvision/)
 
@@ -79,7 +79,6 @@ This is an early project built by one person. The lists below come from running 
 - Markers, drawn regions and lines, bookmarks and a bookmark tour, kept between visits
 - Light and dark themes, on background maps from OpenFreeMap that need no key
 - Shareable links that keep the city, view, level and period
-- A phone layout
 - Dashboard templates: equity, housing, economic, community
 - 78 unit tests, run with a type check on every pull request
 
@@ -89,6 +88,7 @@ This is an early project built by one person. The lists below come from running 
 - Without a saved search list, city search loads the list from the Census boundary service state by state. That is slow on first load, and matches are not ranked by size.
 - Boundaries for most places are fetched live from the Census boundary service. A large county can take ten seconds or more the first time, and nothing loads if that service is down.
 - Margins of error are not shown anywhere, although every survey figure has one.
+- On a phone the page fits and can be used, but it is the desktop arrangement stacked into one column. It is not designed for phones.
 - PNG export fails in Chrome and downloads nothing. In comparison mode it saves only one of the two maps.
 - Side-by-side comparison opens two maps. There is no swipe or difference view.
 - OpenStreetMap layers (parks, schools, transit stops, hospitals) depend on the public Overpass servers and were not confirmed working in the last check.
