@@ -2,6 +2,8 @@
 
 **[Try the live demo →](https://mfaldet.github.io/localvision/)** Nothing to install. Best on a computer screen.
 
+Read the write-up: [What a good dashboard gets right](https://faldetadvisory.com/examples/good-dashboard)
+
 [![The LocalVision demo: a map of the seven Twin Cities counties shaded by number of households, beside charts of population, income and rent.](docs/public/demo-screenshot.jpg)](https://mfaldet.github.io/localvision/)
 
 LocalVision puts public information about a community on a map. Pick any city in the United States and see how many people and households live there, what a typical household earns, and what rent costs, area by area. Switch between two periods to see what changed.
