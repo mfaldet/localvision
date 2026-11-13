@@ -20,6 +20,10 @@ type Level = 'county' | 'place' | 'tract'
 /** For each area: the estimates for each period in measure order, then the margins of error the same way. */
 interface SavedData { periods: string[]; measures: string[]; rows: Record<string, (number | null)[]> }
 const CHANGE = 'Change'
+const COUNTY_CHANGE_NOTES = {
+  population:
+    'County population has no margin of error, so every difference is shown as a change. The two periods also start from different census counts (2010 and 2020). Do not read small differences as real.',
+}
 
 const DATA = `${import.meta.env.BASE_URL}data`
 const METRO_ID = 'msp7'
@@ -138,7 +142,7 @@ function tableFor(level: Level, saved: SavedData, boundaries: GeoJsonFeatureColl
       // The change comes last, so levels that have it open on it
       times: comparable ? [...saved.periods, CHANGE] : saved.periods,
       label: comparable ? 'Survey period' : 'Tracts were redrawn in 2020, so only the latest period is shown.',
-      ...(comparable ? { change: { time: CHANGE } } : {}),
+      ...(comparable ? { change: { time: CHANGE, ...(level === 'county' ? { notes: COUNTY_CHANGE_NOTES } : {}) } } : {}),
     },
   }
 }

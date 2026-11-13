@@ -56,7 +56,14 @@ export interface DataTable {
      * percentages, color the map on a diverging scale around zero, and show
      * areas whose change is within its margin of error in a neutral color.
      */
-    change?: { time: string | number }
+    change?: {
+      time: string | number
+      /**
+       * Cautions to show on the map legend in change mode, keyed by variable
+       * key — for a measure whose change needs reading with care.
+       */
+      notes?: Record<string, string>
+    }
   }
 }
 

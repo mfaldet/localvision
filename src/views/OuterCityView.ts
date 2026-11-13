@@ -1428,12 +1428,14 @@ export class OuterCityView {
     const top = this.changeCap()
     const cap = `${top.toFixed(top < 10 ? 1 : 0)}%`
     const grad = (a: string, b: string) => `background:linear-gradient(90deg, ${a}, ${b})`
+    const caution = this.activeBinding?.table.timeAxis?.change?.notes?.[this.activeKpi]
     this.legendEl.innerHTML = `
       <div class="lv-legend-title">${def?.label ?? ''}: change</div>
       <div class="lv-legend-row"><i style="${grad(CHANGE_COLORS.up[0], CHANGE_COLORS.up[1])}"></i>Increase, up to +${cap} or more</div>
       <div class="lv-legend-row"><i style="background:${CHANGE_COLORS.neutral}"></i>No measurable change</div>
       <div class="lv-legend-row"><i style="${grad(CHANGE_COLORS.down[1], CHANGE_COLORS.down[0])}"></i>Decrease, down to −${cap} or more</div>
       <div class="lv-legend-note">"No measurable change" means the change is within the survey's margin of error. Unshaded areas have no estimate.</div>
+      ${caution ? `<div class="lv-legend-caution" role="note">${escapeHtml(caution)}</div>` : ''}
     `
   }
 
