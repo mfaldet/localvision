@@ -14,6 +14,13 @@ export interface DataRow {
   /** Variable values keyed by VariableMeta.key (NOT the raw ACS code). */
   values: Record<string, number | null>
   /**
+   * Optional margins of error for the values, keyed like `values`, in the
+   * same units. Views show them beside each figure. In a change period
+   * (see `timeAxis.change`) a value no larger than its margin is treated as
+   * "no measurable change".
+   */
+  margins?: Record<string, number | null>
+  /**
    * Optional time-point this row represents. When DataTable.timeAxis is set,
    * the table is expected to contain one row per (geoid, time) pair.
    */
@@ -43,6 +50,13 @@ export interface DataTable {
     times: (string | number)[]
     /** Optional label for the time axis (e.g. "Year"). */
     label?: string
+    /**
+     * Marks one entry of `times` as a change between periods, not a period.
+     * Its values are percentage changes. Views format them as signed
+     * percentages, color the map on a diverging scale around zero, and show
+     * areas whose change is within its margin of error in a neutral color.
+     */
+    change?: { time: string | number }
   }
 }
 

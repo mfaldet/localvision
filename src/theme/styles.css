@@ -126,7 +126,7 @@
   font-size: 12px;
   line-height: 1.6;
   pointer-events: none;
-  max-width: 220px;
+  max-width: 300px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   transition: opacity 0.1s ease;
 }
@@ -1436,3 +1436,69 @@
 
   .lv-map-pane .maplibregl-ctrl-attrib { font-size: 11px; opacity: 0.9; }
 }
+
+/* ── Figures with margins of error, chart readout, change legend ────────── */
+
+.lv-figure {
+  margin: 2px 0 6px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lv-figure-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--lv-color-text); }
+
+.lv-figure-margin { font-size: 13px; font-weight: 600; color: var(--lv-color-text-muted); cursor: help; }
+
+.lv-figure-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--lv-color-border);
+  color: var(--lv-color-text-muted);
+}
+
+.lv-figure-none { font-size: 13px; color: var(--lv-color-text-muted); }
+
+.lv-chart-readout {
+  margin: 2px 0 0;
+  min-height: 16px;
+  font-size: 11px;
+  color: var(--lv-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lv-chart-readout b { color: var(--lv-color-text); font-weight: 600; }
+
+.lv-tooltip-row small { opacity: 0.75; font-size: inherit; }
+
+.lv-tooltip-note { margin-top: 4px; font-size: 11px; opacity: 0.8; }
+
+.lv-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 5;
+  max-width: 250px;
+  padding: 10px 12px;
+  background: var(--lv-color-surface);
+  border: 1px solid var(--lv-color-border);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--lv-color-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.lv-legend-title { font-weight: 700; margin-bottom: 6px; }
+
+.lv-legend-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+
+.lv-legend-row i { flex: 0 0 28px; height: 12px; border-radius: 2px; border: 1px solid var(--lv-color-border); }
+
+.lv-legend-note { margin-top: 6px; color: var(--lv-color-text-muted); }
+
+.lv-tooltip-row span:last-child { white-space: nowrap; }
