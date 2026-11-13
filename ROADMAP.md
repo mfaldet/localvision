@@ -8,13 +8,13 @@ A prioritized plan for getting LocalVision from "promising skeleton" to "full-si
 
 **Live demo:** https://mfaldet.github.io/localvision/ — opens on the Twin Cities metro, with figures saved in the page so it needs no API key.
 
-**Works:** Census boundaries, city search, shareable links, map-to-panel linking, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
+**Works:** Census boundaries, city search, shareable links, two-way linking of map and charts, margins of error beside figures, a change-between-periods view, PNG export, drill-down with breadcrumbs, time slider and playback, display settings, annotations and bookmark tour, light and dark themes, four dashboard templates, unit tests and CI.
 
-**Works, with known faults:** ACS data binding (needs your own Census API key), city search without a saved list (slow first load; matches not ranked by size), live boundaries (slow for large counties), PNG export (fails in Chrome), comparison mode (side by side only), OpenStreetMap layers (not confirmed), Python wrapper (not on PyPI, not checked in a notebook), phones (the page fits, but is the desktop arrangement stacked, not a phone design), accessibility (charts lack screen-reader labels).
+**Works, with known faults:** ACS data binding (needs your own Census API key), city search without a saved list (slow first load; matches not ranked by size), live boundaries (slow for large counties), chart selection (nearest single area, no range brushing), change view (counties and cities only in the demo), PNG export (checked in Chrome only), comparison mode (two stacked maps, no swipe), OpenStreetMap layers (not confirmed), Python wrapper (not on PyPI, not checked in a notebook), phones (the page fits, but is the desktop arrangement stacked, not a phone design), accessibility (charts lack screen-reader labels).
 
-**Planned, not built:** chart-to-map filtering and brushing, SVG and PDF export, swipe and difference comparison, grid-of-years view and year-over-year change, a public layer call and layer reordering, brand themes, a Public Health template, a generated API reference and gallery, browser end-to-end tests, release automation, publishing to npm and PyPI.
+**Planned, not built:** brushing a range on a chart, SVG and PDF export, swipe comparison, grid-of-years view, a public layer call and layer reordering, brand themes, a Public Health template, a generated API reference and gallery, browser end-to-end tests, release automation, publishing to npm and PyPI.
 
-78 unit tests across 9 files. CI on Node 18/20. Not published to npm or PyPI.
+82 unit tests across 10 files. CI on Node 18/20. Not published to npm or PyPI.
 
 Each bundle heading below carries its own status: **built**, **partly built** (with what is missing), or **not built**.
 
@@ -70,7 +70,7 @@ These four bundles together transform the library from "pretty shell" into somet
 
 ### 2. Cross-filtering / Interlinking [M]
 
-**Status:** partly built — map click updates the panel; chart click, brushing and map polygon-select filtering are not built.
+**Status:** partly built — map and charts are linked both ways (a selected area is marked on every chart; a chart click selects the nearest area). Brushing a range and map polygon-select filtering are not built.
 **Capability:** The "linked KPIs" promise. Click in a chart → highlight on the map. Brush on the map → filter the charts.
 
 **Scope:**
@@ -105,7 +105,7 @@ These four bundles together transform the library from "pretty shell" into somet
 
 ### 4. Time Dimension [M]
 
-**Status:** partly built — slider and playback work; the grid-of-years view and year delta are not built.
+**Status:** partly built — slider, playback and a period switch work, and a change-between-two-periods view colors the map by percentage change with a neutral class for changes within the margin of error. The grid-of-years view is not built.
 **Capability:** Animated playback of community metrics over time. Time slider, year-over-year deltas, small-multiples.
 
 **Scope:**
@@ -148,7 +148,7 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 ### 6. Comparison Mode [L]
 
-**Status:** partly built — side-by-side maps as a mode of the main view; delta map and swipe are not built, and there is no `ComparisonView` class.
+**Status:** partly built — side-by-side maps as a mode of the main view; swipe is not built, and there is no `ComparisonView` class. Change between periods is its own view, not a third map.
 **Capability:** Side-by-side maps. Compare 2 KPIs, or 2 years, or 2 areas — with synchronized pan/zoom.
 
 **Scope:**
@@ -183,7 +183,7 @@ These bundles broaden the library's audience and use cases beyond a single-purpo
 
 ### 8. Export & Sharing [M]
 
-**Status:** partly built — shareable URL state works with one fault; PNG export fails in Chrome; SVG and PDF are not built.
+**Status:** partly built — shareable URL state and PNG export work (export checked in Chrome only); SVG and PDF are not built.
 **Capability:** Export the current dashboard as PNG / SVG / PDF. Encode app state in shareable URLs.
 
 **Scope:**

@@ -8,6 +8,7 @@ import {
   LocalVisionApp,
   BoundaryLoader,
   bindDataToBoundaries,
+  percentChange,
   DEFAULT_THEME,
   LIGHT_THEME,
 } from '../../src/index'
@@ -16,7 +17,9 @@ import { getStateMeta } from '../../src/geo/fips'
 import { bboxCenter, findFeatureContaining } from '../../src/geo/spatial'
 
 type Level = 'county' | 'place' | 'tract'
+/** For each area: the estimates for each period in measure order, then the margins of error the same way. */
 interface SavedData { periods: string[]; measures: string[]; rows: Record<string, (number | null)[]> }
+const CHANGE = 'Change'
 
 const DATA = `${import.meta.env.BASE_URL}data`
 const METRO_ID = 'msp7'
@@ -93,6 +96,19 @@ async function boundariesFor(level: Level, stateFips: string, countyFips: string
 
 // ── figures ──────────────────────────────────────────────────────────────────
 
+/** Percentage change from the first period to the second for every measure, with its margin of error. */
+function changeBetween(measures: string[], v: (number | null)[], n: number): Pick<DataRow, 'values' | 'margins'> {
+  const values: Record<string, number | null> = {}
+  const margins: Record<string, number | null> = {}
+  measures.forEach((m, i) => {
+    // dollar figures are already in the same year's dollars
+    const r = percentChange(v[i], v[2 * n + i], v[n + i], v[3 * n + i])
+    values[m] = r ? r.change : null
+    margins[m] = r ? r.margin : null
+  })
+  return { values, margins }
+}
+
 function tableFor(level: Level, saved: SavedData, boundaries: GeoJsonFeatureCollection): DataTable {
   const n = saved.measures.length
   const rows: DataRow[] = []
@@ -100,19 +116,29 @@ function tableFor(level: Level, saved: SavedData, boundaries: GeoJsonFeatureColl
     const geoid = String(f.properties?.['GEOID'] ?? '')
     const values = saved.rows[geoid]
     if (!values) continue
+    const name = f.properties?.['NAME'] as string | undefined
+    const periods = saved.periods.length
     saved.periods.forEach((period, p) => {
       const row: Record<string, number | null> = {}
-      saved.measures.forEach((m, i) => { row[m] = values[p * n + i] ?? null })
-      rows.push({ geoid, name: f.properties?.['NAME'] as string | undefined, values: row, time: period })
+      const margins: Record<string, number | null> = {}
+      saved.measures.forEach((m, i) => {
+        row[m] = values[p * n + i] ?? null
+        margins[m] = values[(periods + p) * n + i] ?? null
+      })
+      rows.push({ geoid, name, values: row, margins, time: period })
     })
+    if (periods === 2) rows.push({ geoid, name, ...changeBetween(saved.measures, values, n), time: CHANGE })
   }
+  const comparable = saved.periods.length === 2
   return {
     variables: MEASURES.map((m) => ({ ...m })),
     rows,
     meta: { source: 'U.S. Census Bureau, American Community Survey 5-year estimates', geographyLevel: level },
     timeAxis: {
-      times: saved.periods,
-      label: saved.periods.length === 1 ? 'Tracts were redrawn in 2020, so only the latest period is shown.' : 'Survey period',
+      // The change comes last, so levels that have it open on it
+      times: comparable ? [...saved.periods, CHANGE] : saved.periods,
+      label: comparable ? 'Survey period' : 'Tracts were redrawn in 2020, so only the latest period is shown.',
+      ...(comparable ? { change: { time: CHANGE } } : {}),
     },
   }
 }
@@ -150,7 +176,6 @@ function mount(): void {
     initialCity: METRO_ID,
     viewLabels: { inner: 'Within city', outer: 'Between cities' },
     timeControl: 'switch',
-    hideExport: true, // PNG export fails in Chrome; hidden here until it is fixed
     drillProvider: ({ level, parent, context }) => provide(level, parent.geoid, context),
     outer: { activeKpi: 'households' },
   })
